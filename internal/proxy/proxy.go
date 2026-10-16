@@ -43,51 +43,69 @@ func (c *countWriter) Write(p []byte) (int, error) {
 // Pipe copies in both directions until both sides are finished, propagating
 // half-closes (FIN). It closes both ends.
 //
-// A failure to *read* one side only ends that direction, gracefully, so bytes
-// already sent the other way (a kick message, say) still arrive. A failure to
-// *write* means the receiving side is gone, and resets everything.
+// The rules keep bytes already on their way (a server's kick message, say)
+// from being thrown away:
+//   - TCP read ends (FIN or reset): FIN the stream; queued data still goes.
+//   - TCP write fails (the game is gone): tell the peer to stop sending, but
+//     leave our sending side alone; reading the game socket ends by itself.
+//   - Stream ends cleanly: half-close the TCP connection.
+//   - Stream reset or connection lost: close the TCP connection.
+//   - Stream write fails (the peer stopped reading): stop this direction
+//     only; data the peer still sends keeps arriving.
+//
+// Once one direction has finished, the other gets halfCloseGrace to finish
+// too, so a peer that never closes can't hold a game connection forever.
 func Pipe(tcp net.Conn, s *quic.Stream, st *Stats) {
 	if st == nil {
 		st = &Stats{}
 	}
 	var wg sync.WaitGroup
-	var once sync.Once
-	abort := func() {
-		once.Do(func() {
-			s.CancelRead(1)
-			s.CancelWrite(1)
-			_ = tcp.Close()
+	var firstDone sync.Once
+	finished := func() {
+		firstDone.Do(func() {
+			dl := time.Now().Add(halfCloseGrace)
+			_ = tcp.SetReadDeadline(dl)
+			_ = s.SetReadDeadline(dl)
 		})
 	}
 	wg.Add(2)
 	go func() { // TCP → stream
 		defer wg.Done()
+		defer finished()
 		w := &countWriter{w: s, n: &st.Up}
 		_, _ = io.Copy(w, tcp)
 		if w.err != nil {
-			abort()
+			s.CancelWrite(1)
 			return
 		}
 		_ = s.Close() // FIN on the stream's send side; buffered data is still delivered
 	}()
 	go func() { // stream → TCP
 		defer wg.Done()
+		defer finished()
 		w := &countWriter{w: tcp, n: &st.Down}
-		_, _ = io.Copy(w, s)
-		if w.err != nil {
-			abort()
-			return
-		}
-		if cw, ok := tcp.(interface{ CloseWrite() error }); ok {
-			_ = cw.CloseWrite()
-		} else {
+		_, err := io.Copy(w, s)
+		switch {
+		case w.err != nil:
+			s.CancelRead(1)
+		case err != nil:
 			_ = tcp.Close()
+		default:
+			if cw, ok := tcp.(interface{ CloseWrite() error }); ok {
+				_ = cw.CloseWrite()
+			} else {
+				_ = tcp.Close()
+			}
 		}
 	}()
 	wg.Wait()
 	_ = tcp.Close()
 	s.CancelRead(0)
 }
+
+// halfCloseGrace is how long the other direction may continue after one
+// direction of a proxied connection has ended.
+const halfCloseGrace = 2 * time.Minute
 
 // Dialer opens TCP connections to the Minecraft target on the host.
 type Dialer func(ctx context.Context) (net.Conn, error)

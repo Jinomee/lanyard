@@ -319,6 +319,8 @@
   "diag.host.unknown": "Your network type couldn't be determined. Friends can still try to join.",
   "diag.host.udp_blocked": "Your network seems to block the traffic {app} needs (UDP). Friends probably can't connect. Try another network.",
   "diag.host.ipv6_ok": "IPv6 works on your connection, which helps friends who also have IPv6.",
+  "diag.host.mapped_unverified": "Your router forwarded a port for {app}, but the connection test servers didn't answer, so it isn't confirmed that friends can get through. Friends can still try to join.",
+  "diag.host.enable_upnp_setting": "Turn on \"Ask my router to forward a port\" in {app}'s Settings, then start hosting again.",
   "diag.host.enable_upnp": "Turn on UPnP in your router (usually in the router's web page under \"NAT\", \"Advanced\" or \"UPnP\"), then start hosting again.",
   "diag.host.cgnat": "Your internet provider shares your public address with other customers (CGNAT). Ask the provider for a public IP address or IPv6, or let a friend host instead."
 }

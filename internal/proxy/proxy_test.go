@@ -256,3 +256,52 @@ func TestBytesBeforeResetArrive(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// The server sends a final message and closes, while the guest's game keeps
+// sending (as Minecraft does every tick), so the host's writes to the closed
+// game socket fail. The guest reads slowly: the message sits in its receive
+// buffer, where a stream reset from the host would discard it.
+func TestFinalMessageArrivesWhileGuestKeepsSending(t *testing.T) {
+	msg := bytes.Repeat([]byte("kick reason "), 1_400) // 16 KB: realistic, and read by the host before the game socket resets
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = c.Read(make([]byte, 64))
+		_, _ = c.Write(msg)
+		_ = c.Close()
+	}()
+	h := startHost(t, ln.Addr().String())
+	conn, _, err := dialGuest(t, h, h.id.Fingerprint(), h.secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := net.Pipe()
+	go proxy.OpenGuest(context.Background(), conn, b, nil)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() { // the game's tick packets
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(2 * time.Millisecond):
+			}
+			if _, err := a.Write([]byte("tick")); err != nil {
+				return
+			}
+		}
+	}()
+	time.Sleep(time.Second) // a slow reader: the host's writes fail meanwhile
+	_ = a.SetReadDeadline(time.Now().Add(10 * time.Second))
+	got, _ := io.ReadAll(a)
+	if !bytes.Equal(got, msg) {
+		t.Fatalf("got %d of %d bytes", len(got), len(msg))
+	}
+}

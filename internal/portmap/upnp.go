@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/huin/goupnp/dcps/internetgateway2"
+	"github.com/huin/goupnp/soap"
 )
 
 // igdClient is the method set shared by the WANIPConnection and
@@ -72,8 +73,13 @@ func (u *upnpMapper) discover(ctx context.Context) error {
 	return nil
 }
 
+// perServiceTimeout bounds each gateway service, so one that hangs can't use
+// up the time the next (working) one needs.
+const perServiceTimeout = 3 * time.Second
+
 // add tries each gateway service until one with a public address maps the
-// port. ErrPrivateExternal is reported only if no service could do better.
+// port. If none can, a service reporting a private WAN address (double NAT,
+// CGNAT) is the most telling answer and is the one returned.
 func (u *upnpMapper) add(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (netip.AddrPort, time.Duration, error) {
 	if u.clients == nil {
 		if err := u.discover(ctx); err != nil {
@@ -82,7 +88,9 @@ func (u *upnpMapper) add(ctx context.Context, internalPort, externalPort uint16,
 	}
 	var private, other error
 	for _, c := range u.clients {
-		ap, ttl, err := u.addVia(ctx, c, internalPort, externalPort, lifetime)
+		sctx, cancel := context.WithTimeout(ctx, perServiceTimeout)
+		ap, ttl, err := u.addVia(sctx, c, internalPort, externalPort, lifetime)
+		cancel()
 		if err == nil {
 			u.client, u.local = c.c, c.local
 			return ap, ttl, nil
@@ -96,24 +104,42 @@ func (u *upnpMapper) add(ctx context.Context, internalPort, externalPort uint16,
 			break
 		}
 	}
-	if other != nil {
-		return netip.AddrPort{}, 0, other
+	if private != nil {
+		return netip.AddrPort{}, 0, private
 	}
-	return netip.AddrPort{}, 0, private
+	return netip.AddrPort{}, 0, other
 }
+
+// upnpCode returns the UPnP error code of a SOAP fault (0 if err isn't one).
+func upnpCode(err error) int {
+	var f *soap.SOAPFaultError
+	if errors.As(err, &f) {
+		return f.Detail.UPnPError.Errorcode
+	}
+	return 0
+}
+
+// UPnP error codes (UPnP-IGD WANIPConnection).
+const (
+	upnpActionFailed        = 501 // miniupnpd: also "my WAN address is private"
+	upnpConflictInMapping   = 718
+	upnpOnlyPermanentLeases = 725
+)
 
 func (u *upnpMapper) addVia(ctx context.Context, c igdConn, internalPort, externalPort uint16, lifetime time.Duration) (netip.AddrPort, time.Duration, error) {
 	extStr, err := c.c.GetExternalIPAddressCtx(ctx)
 	if err != nil {
 		// miniupnpd answers 501 when its WAN address is private (CGNAT).
-		if strings.Contains(err.Error(), "501") {
+		if upnpCode(err) == upnpActionFailed {
 			return netip.AddrPort{}, 0, fmt.Errorf("%w (%w)", ErrPrivateExternal, err)
 		}
 		return netip.AddrPort{}, 0, wrap("get external IP", err)
 	}
 	ext, err := netip.ParseAddr(strings.TrimSpace(extStr))
-	if err != nil {
-		return netip.AddrPort{}, 0, ErrPrivateExternal
+	if err != nil || ext.IsUnspecified() {
+		// No address at all: typically a service for an unused connection
+		// (a PPP service beside the live IP one), not a sign of CGNAT.
+		return netip.AddrPort{}, 0, fmt.Errorf("get external IP: service has no address (%q)", extStr)
 	}
 	if err := checkExternal(ext); err != nil {
 		return netip.AddrPort{}, 0, err
@@ -129,7 +155,7 @@ func (u *upnpMapper) addVia(ctx context.Context, c igdConn, internalPort, extern
 			continue
 		}
 		err := try(p, lease)
-		if err != nil && strings.Contains(err.Error(), "725") {
+		if err != nil && upnpCode(err) == upnpOnlyPermanentLeases {
 			// OnlyPermanentLeasesSupported: many older routers.
 			lease = 0
 			err = try(p, 0)
@@ -153,11 +179,11 @@ func (u *upnpMapper) renew(ctx context.Context, internalPort, externalPort uint1
 	}
 	lease := uint32(lifetime / time.Second)
 	err := u.client.AddPortMappingCtx(ctx, "", externalPort, "UDP", internalPort, u.local, true, u.desc, lease)
-	if err != nil && strings.Contains(err.Error(), "725") {
+	if err != nil && upnpCode(err) == upnpOnlyPermanentLeases {
 		lease = 0
 		err = u.client.AddPortMappingCtx(ctx, "", externalPort, "UDP", internalPort, u.local, true, u.desc, 0)
 	}
-	if err != nil && strings.Contains(err.Error(), "718") {
+	if err != nil && upnpCode(err) == upnpConflictInMapping {
 		// ConflictInMappingEntry: another computer has the port now.
 		return 0, fmt.Errorf("%w (%w)", errLost, err)
 	}

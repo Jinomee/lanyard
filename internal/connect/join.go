@@ -133,6 +133,7 @@ type joiner struct {
 	mu       sync.Mutex
 	attempts map[netip.AddrPort]*Attempt // one path per address
 	pokes    map[netip.AddrPort]chan struct{}
+	cancels  map[netip.AddrPort]context.CancelFunc
 	phase    string
 	winner   chan won
 	wg       sync.WaitGroup
@@ -156,7 +157,8 @@ func Join(ctx context.Context, opt JoinOptions) (*Joined, error) {
 	actx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	j := &joiner{opt: opt, ctx: actx, attempts: map[netip.AddrPort]*Attempt{}, pokes: map[netip.AddrPort]chan struct{}{},
-		phase: PhaseDirect, winner: make(chan won, 1)}
+		cancels: map[netip.AddrPort]context.CancelFunc{},
+		phase:   PhaseDirect, winner: make(chan won, 1)}
 
 	// Peer-reflexive learning: a valid host punch reveals the address the
 	// host's NAT actually uses toward us. The MAC can't cover the source
@@ -269,24 +271,41 @@ func (j *joiner) startPath(p path, delay time.Duration) {
 		}
 		return
 	}
+	var dropped *Attempt
 	if p.strategy == StratPeerRefl {
-		n := 0
-		for _, a := range j.attempts {
-			if a.Strategy == StratPeerRefl {
-				n++
+		// Keep the most recently learned addresses: a host behind a
+		// symmetric NAT can show several, and the newest is the one its NAT
+		// uses now.
+		var n int
+		var oldest netip.AddrPort
+		for ap, a := range j.attempts {
+			if a.Strategy != StratPeerRefl {
+				continue
+			}
+			n++
+			if !oldest.IsValid() || a.Started.Before(j.attempts[oldest].Started) {
+				oldest = ap
 			}
 		}
 		if n >= maxPeerRefl {
-			j.mu.Unlock()
-			return
+			j.cancels[oldest]()
+			dropped = j.attempts[oldest]
+			dropped.Outcome = OutCancelled
+			delete(j.attempts, oldest)
+			delete(j.pokes, oldest)
+			delete(j.cancels, oldest)
 		}
 	}
 	a := &Attempt{Strategy: p.strategy, Addr: p.addr.String(), Phase: j.phase, Outcome: OutPending, Started: time.Now()}
 	poke := make(chan struct{}, 1)
-	j.attempts[p.addr], j.pokes[p.addr] = a, poke
+	pctx, pcancel := context.WithCancel(j.ctx)
+	j.attempts[p.addr], j.pokes[p.addr], j.cancels[p.addr] = a, poke, pcancel
 	j.wg.Add(1)
 	j.mu.Unlock()
-	go j.run(p, a, delay, poke)
+	if dropped != nil {
+		j.report(dropped)
+	}
+	go j.run(pctx, p, a, delay, poke)
 }
 
 func (j *joiner) report(a *Attempt) {
@@ -302,7 +321,7 @@ func (j *joiner) endpointFor(ap netip.AddrPort) *transport.Endpoint {
 	return j.opt.EP6
 }
 
-func (j *joiner) run(p path, a *Attempt, delay time.Duration, poke <-chan struct{}) {
+func (j *joiner) run(pctx context.Context, p path, a *Attempt, delay time.Duration, poke <-chan struct{}) {
 	defer j.wg.Done()
 	ep := j.endpointFor(p.addr)
 	if ep == nil {
@@ -314,7 +333,7 @@ func (j *joiner) run(p path, a *Attempt, delay time.Duration, poke <-chan struct
 	}
 	select {
 	case <-time.After(delay):
-	case <-j.ctx.Done():
+	case <-pctx.Done():
 		return
 	}
 	backoff := time.Second
@@ -324,7 +343,7 @@ func (j *joiner) run(p path, a *Attempt, delay time.Duration, poke <-chan struct
 		a.Phase = j.phase
 		j.mu.Unlock()
 		t0 := time.Now()
-		dctx, dcancel := context.WithTimeout(j.ctx, j.opt.HandshakeTimeout)
+		dctx, dcancel := context.WithTimeout(pctx, j.opt.HandshakeTimeout)
 		conn, err := ep.Transport().Dial(dctx, net.UDPAddrFromAddrPort(p.addr), transport.ClientTLS(j.opt.Invite.Fingerprint), transport.QUICConfig())
 		dcancel()
 		j.mu.Lock()
@@ -332,7 +351,7 @@ func (j *joiner) run(p path, a *Attempt, delay time.Duration, poke <-chan struct
 		a.Phase = j.phase // the phase in which this try ended
 		if err == nil {
 			a.Outcome, a.Error = OutOK, ""
-		} else if j.ctx.Err() != nil {
+		} else if pctx.Err() != nil {
 			if a.Outcome == OutPending {
 				a.Outcome = OutCancelled
 			}
@@ -351,13 +370,13 @@ func (j *joiner) run(p path, a *Attempt, delay time.Duration, poke <-chan struct
 			}
 			return
 		}
-		if j.ctx.Err() != nil || out == OutCertMismatch {
+		if pctx.Err() != nil || out == OutCertMismatch {
 			return
 		}
 		select {
 		case <-time.After(backoff):
 		case <-poke:
-		case <-j.ctx.Done():
+		case <-pctx.Done():
 			return
 		}
 		if time.Since(a.Started) > time.Minute {

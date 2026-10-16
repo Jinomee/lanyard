@@ -71,7 +71,8 @@ func DiagnoseJoin(local *Report, inv *joincode.Invite, attempts []Attempt, reply
 	}
 	// With a port mapping the host's own NAT behaviour doesn't matter.
 	hostSym := inv.Flags.Has(joincode.FlagMapDep) && !inv.Flags.Has(joincode.FlagPortMapped)
-	guestSym := local != nil && local.Mapping == stunx.MappingDependent
+	// Likewise the guest's: a port-mapped host accepts from any address.
+	guestSym := local != nil && local.Mapping == stunx.MappingDependent && !inv.Flags.Has(joincode.FlagPortMapped)
 	switch {
 	case hostSym && guestSym:
 		add("diag.advice.both_symmetric")
@@ -107,10 +108,14 @@ func DiagnoseJoin(local *Report, inv *joincode.Invite, attempts []Attempt, reply
 // be able to join. Shown on the Host screen before anyone connects.
 func HostOutlook(r *Report) Diagnosis {
 	d := Diagnosis{}
-	// A working port mapping beats every other indicator.
+	mapped := r.PortMap.Mapping != nil && !r.CGNAT
 	switch {
-	case (r.PortMap.Mapping != nil && !r.CGNAT) || r.NATType == NATOpen || r.NATType == NATFullCone:
+	case (mapped && !r.UDPBlocked) || r.NATType == NATOpen || r.NATType == NATFullCone:
 		d.Summary = Advice{Key: "diag.host.good"}
+	case mapped:
+		// The router forwarded a port, but no test server answered: likely
+		// fine, but nothing confirmed that traffic gets through.
+		d.Summary = Advice{Key: "diag.host.mapped_unverified"}
 	case r.UDPBlocked && !r.IPv6:
 		d.Summary = Advice{Key: "diag.host.udp_blocked"}
 	case r.Mapping == stunx.MappingIndependent:
@@ -123,7 +128,12 @@ func HostOutlook(r *Report) Diagnosis {
 	if r.CGNAT {
 		d.Advice = append(d.Advice, Advice{Key: "diag.host.cgnat"})
 	} else if d.Summary.Key != "diag.host.good" && d.Summary.Key != "diag.host.udp_blocked" && r.PortMap.Mapping == nil {
-		d.Advice = append(d.Advice, Advice{Key: "diag.host.enable_upnp"})
+		if r.PortMapTried {
+			d.Advice = append(d.Advice, Advice{Key: "diag.host.enable_upnp"})
+		} else {
+			// LANyard didn't ask the router: the router may well be fine.
+			d.Advice = append(d.Advice, Advice{Key: "diag.host.enable_upnp_setting"})
+		}
 	}
 	if r.IPv6 {
 		d.Advice = append(d.Advice, Advice{Key: "diag.host.ipv6_ok"})

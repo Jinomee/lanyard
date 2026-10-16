@@ -286,6 +286,9 @@ func ProbeFiltering(ctx context.Context, io PacketIO, server netip.AddrPort, wai
 		}
 		return FilteringIndependent, nil
 	}
+	if ctx.Err() != nil { // out of time, not evidence of filtering
+		return FilteringUnknown, ctx.Err()
+	}
 	c, cancel = context.WithTimeout(ctx, wait)
 	r, err = Binding(c, io, server, ChangePort)
 	cancel()
@@ -294,6 +297,9 @@ func ProbeFiltering(ctx context.Context, io PacketIO, server netip.AddrPort, wai
 			return FilteringUnknown, nil
 		}
 		return FilteringAddress, nil
+	}
+	if ctx.Err() != nil {
+		return FilteringUnknown, ctx.Err()
 	}
 	return FilteringAddressAndPort, nil
 }

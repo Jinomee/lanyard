@@ -152,7 +152,12 @@ func (p *pcpMapper) add(ctx context.Context, internalPort, externalPort uint16, 
 }
 
 func (p *pcpMapper) renew(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (time.Duration, error) {
-	_, ttl, err := p.add(ctx, internalPort, externalPort, lifetime)
+	ap, ttl, err := p.add(ctx, internalPort, externalPort, lifetime)
+	if err == nil && ap.Port() != externalPort {
+		// The router answered with another port (it rebooted, say): the
+		// port in the invite no longer leads here.
+		return ttl, fmt.Errorf("%w: router moved the mapping to port %d", errLost, ap.Port())
+	}
 	return ttl, err
 }
 

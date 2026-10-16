@@ -64,7 +64,12 @@ func (n *natpmpMapper) add(ctx context.Context, internalPort, externalPort uint1
 }
 
 func (n *natpmpMapper) renew(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (time.Duration, error) {
-	_, ttl, err := n.add(ctx, internalPort, externalPort, lifetime)
+	ap, ttl, err := n.add(ctx, internalPort, externalPort, lifetime)
+	if err == nil && ap.Port() != externalPort {
+		// The router answered with another port (it rebooted, say): the
+		// port in the invite no longer leads here.
+		return ttl, fmt.Errorf("%w: router moved the mapping to port %d", errLost, ap.Port())
+	}
 	return ttl, err
 }
 

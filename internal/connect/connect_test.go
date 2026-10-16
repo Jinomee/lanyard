@@ -263,6 +263,7 @@ func TestDiagnoseRules(t *testing.T) {
 		{"guest symmetric, host cgnat", sym, joincode.FlagMapEIM | joincode.FlagCGNAT, true, "guest_symmetric,host_cgnat,host_firewall,hotspot"},
 		// A port-mapped host's NAT type is irrelevant: no "swap host", no "enable UPnP".
 		{"host symmetric but port-mapped", cone, joincode.FlagMapDep | joincode.FlagPortMapped, true, "ipv6_host_missing,host_firewall,hotspot"},
+		{"guest symmetric, host port-mapped", sym, joincode.FlagMapEIM | joincode.FlagPortMapped, true, "host_firewall,hotspot"},
 	}
 	for _, c := range cases {
 		got := keys(DiagnoseJoin(c.local, &joincode.Invite{Flags: c.flags}, nil, c.reply))
@@ -270,6 +271,7 @@ func TestDiagnoseRules(t *testing.T) {
 			t.Errorf("%s:\n got %s\nwant %s", c.name, got, c.want)
 		}
 	}
+	sym.PortMapTried = true
 	if d := HostOutlook(sym); d.Summary.Key != "diag.host.hard" || len(d.Advice) != 1 || d.Advice[0].Key != "diag.host.enable_upnp" {
 		t.Errorf("outlook %+v", d)
 	}
@@ -278,10 +280,19 @@ func TestDiagnoseRules(t *testing.T) {
 	if d := HostOutlook(cg); len(d.Advice) != 1 || d.Advice[0].Key != "diag.host.cgnat" {
 		t.Errorf("outlook %+v", d)
 	}
-	// A port mapping outranks a failed STUN check.
-	mapped := &Report{UDPBlocked: true}
+	// A port mapping is good news, but not confirmed if no STUN answered.
+	mapped := &Report{PortMapTried: true}
 	mapped.PortMap.Mapping = &portmap.Mapping{Protocol: "upnp"}
 	if d := HostOutlook(mapped); d.Summary.Key != "diag.host.good" {
+		t.Errorf("outlook %+v", d)
+	}
+	mapped.UDPBlocked = true
+	if d := HostOutlook(mapped); d.Summary.Key != "diag.host.mapped_unverified" {
+		t.Errorf("outlook %+v", d)
+	}
+	// With UPnP off in LANyard, the advice is about LANyard's setting.
+	off := &Report{Mapping: stunx.MappingDependent}
+	if d := HostOutlook(off); len(d.Advice) != 1 || d.Advice[0].Key != "diag.host.enable_upnp_setting" {
 		t.Errorf("outlook %+v", d)
 	}
 }
@@ -326,5 +337,40 @@ func TestReplayedPunchIgnored(t *testing.T) {
 	defer mu.Unlock()
 	if len(learned) != 1 {
 		t.Fatalf("learned %d addresses from one punch packet: %v", len(learned), learned)
+	}
+}
+
+// Addresses learned earlier (several, as from a symmetric NAT) must not use
+// up the limit and keep the guest from dialing the host's current address.
+func TestPeerReflexiveCapKeepsNewest(t *testing.T) {
+	h := startHost(t)
+	h.inv.Candidates = []joincode.Candidate{{Kind: joincode.CandReflexive, Addr: deadAddr(t)}}
+	g := guestEP(t)
+	session := [4]byte{1, 2, 3, 4}
+	gAddr := netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), g.Port())
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		// Valid punches from addresses where nothing answers QUIC.
+		for range maxPeerRefl + 2 {
+			c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+			if err != nil {
+				return
+			}
+			defer func() { _ = c.Close() }()
+			_, _ = c.WriteToUDPAddrPort(transport.MakePunch(h.inv.Secret, transport.RoleHost, session), gAddr)
+		}
+		time.Sleep(300 * time.Millisecond)
+		rep := &joincode.Reply{Session: session, Candidates: []joincode.Candidate{{Kind: joincode.CandLAN, Addr: gAddr}}}
+		HostPunch(ctx, PunchOptions{EP4: h.ep, Secret: h.inv.Secret, Reply: rep, Duration: 5 * time.Second})
+	}()
+	j, err := Join(ctx, JoinOptions{EP4: g, Invite: h.inv, Session: session})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = j.Conn.CloseWithError(0, "") }()
+	if j.Via.Strategy != StratPeerRefl {
+		t.Fatalf("via %+v", j.Via)
 	}
 }

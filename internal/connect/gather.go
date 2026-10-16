@@ -30,21 +30,23 @@ const (
 
 // Report describes the local network as seen during gathering.
 type Report struct {
-	Time        time.Time            `json:"time"`
-	ElapsedMs   int64                `json:"elapsedMs"`
-	Local       netinfo.Addrs        `json:"local"`
-	IPv6        bool                 `json:"ipv6"`
-	IPv6Stun    string               `json:"ipv6Stun"` // "ok", "failed", "untested"
-	STUN4       []stunx.ServerResult `json:"stun4"`
-	STUN6       []stunx.ServerResult `json:"stun6,omitempty"`
-	PublicV4    netip.AddrPort       `json:"publicV4,omitzero"`
-	Mapping     stunx.Mapping        `json:"mapping"`
-	Filtering   stunx.Filtering      `json:"filtering"`
-	NATType     string               `json:"natType"`
-	PortMap     portmap.Result       `json:"portMap"`
-	CGNAT       bool                 `json:"cgnat"`
-	CGNATReason string               `json:"cgnatReason,omitempty"` // i18n key
-	UDPBlocked  bool                 `json:"udpBlocked"`
+	Time      time.Time            `json:"time"`
+	ElapsedMs int64                `json:"elapsedMs"`
+	Local     netinfo.Addrs        `json:"local"`
+	IPv6      bool                 `json:"ipv6"`
+	IPv6Stun  string               `json:"ipv6Stun"` // "ok", "failed", "untested"
+	STUN4     []stunx.ServerResult `json:"stun4"`
+	STUN6     []stunx.ServerResult `json:"stun6,omitempty"`
+	PublicV4  netip.AddrPort       `json:"publicV4,omitzero"`
+	Mapping   stunx.Mapping        `json:"mapping"`
+	Filtering stunx.Filtering      `json:"filtering"`
+	NATType   string               `json:"natType"`
+	PortMap   portmap.Result       `json:"portMap"`
+	// PortMapTried: asking the router was enabled in the settings.
+	PortMapTried bool   `json:"portMapTried"`
+	CGNAT        bool   `json:"cgnat"`
+	CGNATReason  string `json:"cgnatReason,omitempty"` // i18n key
+	UDPBlocked   bool   `json:"udpBlocked"`
 }
 
 // GatherOptions configures Gather.
@@ -100,6 +102,7 @@ func Gather(ctx context.Context, opt GatherOptions) *Gathered {
 			}
 		}()
 	}
+	r.PortMapTried = opt.PortMap
 	if opt.PortMap {
 		wg.Add(1)
 		go func() {

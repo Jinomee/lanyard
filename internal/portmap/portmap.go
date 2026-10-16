@@ -40,8 +40,10 @@ type mapper interface {
 	remove(ctx context.Context, internalPort, externalPort uint16) error
 }
 
-// errLost means the external port now belongs to another computer.
-var errLost = errors.New("port mapping taken over by another computer")
+// errLost means the mapping is no longer on the external port in use: the
+// port now belongs to another computer (UPnP), or the router moved our
+// mapping elsewhere (NAT-PMP/PCP after a router reboot).
+var errLost = errors.New("port mapping lost")
 
 // Result reports what each protocol did, for diagnostics.
 type Result struct {
@@ -187,7 +189,10 @@ func (m *Mapping) Close() error {
 		m.cancel()
 		<-m.done
 	}
-	if m.lost {
+	// A UPnP rule is keyed by external port, which may be someone else's now.
+	// NAT-PMP/PCP mappings are keyed by our internal port, so removing a
+	// moved one is always safe (and frees it before its lifetime runs out).
+	if m.lost && m.m.name() == "upnp" {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
