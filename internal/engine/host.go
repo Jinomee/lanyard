@@ -114,14 +114,14 @@ type hostSession struct {
 	// which stops hole punching started with the old code's reply codes.
 	inviteCtx    context.Context
 	inviteCancel context.CancelFunc
-	guests     map[string]*guestConn
-	pending    map[string]*pendingJoin
-	punches    []*PunchInfo
-	stats      proxy.Stats
-	lastTarget netip.AddrPort
-	lastMOTD   string
-	targetOK   bool
-	since      time.Time
+	guests       map[string]*guestConn
+	pending      map[string]*pendingJoin
+	punches      []*PunchInfo
+	stats        proxy.Stats
+	lastTarget   netip.AddrPort
+	lastMOTD     string
+	targetOK     bool
+	since        time.Time
 }
 
 func (h *hostSession) active() bool {
