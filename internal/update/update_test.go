@@ -149,6 +149,13 @@ func TestNewer(t *testing.T) {
 		{"0.1.0", "0.0.0-dev", true},
 		{"garbage", "1.0.0", false},
 		{"0.9.0", "1.0.0", false},
+		{"1.0.0-rc.2", "1.0.0-rc.1", true},
+		{"1.0.0-rc.10", "1.0.0-rc.9", true},
+		{"1.0.0-rc.1", "1.0.0-beta.2", true},
+		{"1.0.0-rc.1.1", "1.0.0-rc.1", true},
+		{"1.0.0-rc.1", "1.0.0-rc.1", false},
+		{"1.0.0-1", "1.0.0-alpha", false}, // numeric identifiers sort first
+		{"1.0.0+build.5", "1.0.0", false},
 	}
 	for _, c := range cases {
 		if got := Newer(c.a, c.b); got != c.want {
@@ -211,5 +218,13 @@ func TestCheckerSourcePolicies(t *testing.T) {
 	}
 	if res := check("2.0.0-rc.2", rc); !res.Available {
 		t.Fatalf("pre-release user not offered the next pre-release: %+v", res)
+	}
+	// Neither a pre-release nor a replay of the current version on the first
+	// source may hide a newer stable release on the second.
+	stable := signedSource(t, sk, "2.1.0", ghURL)
+	for _, first := range []*httptest.Server{rc, signedSource(t, sk, "2.0.0", ghURL)} {
+		if res := check("2.0.0", first, stable); !res.Available || res.Latest != "2.1.0" {
+			t.Fatalf("newer stable hidden: %+v", res)
+		}
 	}
 }

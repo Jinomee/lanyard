@@ -61,7 +61,10 @@ the bottom of each section.
 * The GUI binary re-executes itself with `--core` instead of embedding the
   core, so the core outlives a GUI restart and a future mod can share it. A
   standalone `lanyard-core` binary is also built for headless use.
-* The core exits after 60 s with no API calls and no active sessions.
+* The core started by the GUI exits after 60 s with no API calls and no
+  active sessions, and also ends sessions no client has touched for 10
+  minutes (the GUI sends a heartbeat; a crashed GUI doesn't). The standalone
+  `lanyard-core` runs until stopped unless started with `-idle`.
 * GUI state updates by polling `/v1/state` every second (simplest robust
   option; an event stream can be added later without breaking clients).
 * The GUI lives in a separate Go module (`gui/go.mod`) so that `go build ./...`

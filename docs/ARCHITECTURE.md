@@ -47,8 +47,10 @@ by the original specification are recorded in [DECISIONS.md](DECISIONS.md).
 * **Control API security** — listens on `127.0.0.1` only, on a random port.
   Every request needs `Authorization: Bearer <token>`; the token is 256 random
   bits regenerated each start and only readable by the user (the config
-  directory is mode `0700`; on Windows its permissions are replaced with the
-  current user and SYSTEM only, since Unix modes mean nothing there). Requests whose
+  directory is mode `0700`; on Windows, when LANyard creates the folder, its
+  permissions are set to the current user and SYSTEM only, since Unix modes
+  mean nothing there; a folder that already existed, such as a chosen
+  `LANYARD_HOME`, keeps the permissions its owner gave it). Requests whose
   `Host` header is not a loopback address are rejected (DNS-rebinding guard),
   and no CORS headers are ever sent.
 
@@ -128,8 +130,8 @@ symmetric NAT) and is added as a new candidate.
 
 "Fails" cases need the v1.1 self-hosted relay or IPv6. The NAT lab
 (`test/natlab`) checks a representative part of this table: a cell from every
-row and both sides of each "fails" boundary (7 cells), plus UPnP, CGNAT and
-IPv6-only scenarios. The remaining cells follow from the same rules.
+row and every "fails" cell (8 cells), plus UPnP, CGNAT and IPv6-only
+scenarios. The remaining cells follow from the same rules.
 
 ### Security
 * QUIC/TLS 1.3 with ALPN `lanyard/1`. The guest pins the host certificate by

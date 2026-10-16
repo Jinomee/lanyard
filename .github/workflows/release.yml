@@ -205,8 +205,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           pre=""; case "$V" in *-*) pre="--prerelease";; esac
-          gh release create "$TAG" dist/* --title "LANyard $V" --generate-notes $pre --verify-tag || \
-            gh release upload "$TAG" dist/* --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # A re-run: published files are never replaced (builds aren't
+            # byte-reproducible, and the mirror keeps the originals too), so
+            # only files missing from the release are added.
+            existing="$(gh release view "$TAG" --json assets -q '.assets[].name')"
+            for f in dist/*; do
+              if grep -qxF "$(basename "$f")" <<<"$existing"; then
+                echo "kept existing $(basename "$f")"
+              else
+                gh release upload "$TAG" "$f"
+              fi
+            done
+          else
+            gh release create "$TAG" dist/* --title "LANyard $V" --generate-notes $pre --verify-tag
+          fi
       - name: Upload to the update mirror
         if: vars.MIRROR_HOST != ''
         env:
@@ -227,7 +240,14 @@ jobs:
           #    offers a pre-release) newer than what the mirror has now, so
           #    re-running an old tag can't roll it back.
           server="$(go run ./tools/brandsync -print-update-server)"
-          current="$(curl -fsS "${server%/}/manifest.json" | jq -r .version || true)"
+          # Only "no manifest yet" (404) may count as nothing to protect; any
+          # other failure stops here rather than risk rolling the mirror back.
+          code="$(curl -sS -o current.json -w '%{http_code}' "${server%/}/manifest.json")"
+          case "$code" in
+            404) current="" ;;
+            200) current="$(jq -er .version current.json)" ;;
+            *)   echo "::error::Could not read the mirror's manifest.json (HTTP $code)"; exit 1 ;;
+          esac
           case "$V" in
             *-*) echo "Pre-release $V: top-level manifest on the mirror left unchanged." ;;
             *)

@@ -72,10 +72,13 @@ files (pre-releases included, e.g. `0.1.0-rc.1/`).
 (`<updateServer>/<version>/<file>`) next to the GitHub URL for every file in
 the manifest. After publishing on GitHub it rsyncs `dist/` to `./<version>/`
 with `--ignore-existing`, so a re-run never replaces files that were already
-published. Then, **only for stable versions** (no `-` in the version) that
+published (on GitHub too, a re-run only adds missing files). Then, **only for stable versions** (no `-` in the version) that
 are **newer than the mirror's current `manifest.json`**, it rsyncs
 `manifest.json` and `manifest.json.minisig` to `./`; re-running the workflow
-for an older tag can't roll the mirror back. The workflow must stay
+for an older tag can't roll the mirror back. If the mirror's manifest can't
+be read (anything but HTTP 200 or 404), the step fails instead of guessing.
+A release that went wrong is fixed by publishing a new version, never by
+re-running an old one (re-built files would not match the published hashes). The workflow must stay
 within the deploy key's limits: rsync uploads only, relative paths, no
 `--delete`, no other ssh commands.
 

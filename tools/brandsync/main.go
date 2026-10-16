@@ -21,7 +21,7 @@ const (
 	projectNSI = "gui/build/windows/installer/project.nsi"
 )
 
-var uriSchemeDefine = regexp.MustCompile(`(?m)^!define URI_SCHEME ".*"\r?$`)
+var uriSchemeDefine = regexp.MustCompile(`(?m)^!define URI_SCHEME ".*"(\r?)$`)
 
 func main() {
 	check := flag.Bool("check", false, "only report whether files are in sync")
@@ -93,7 +93,7 @@ func syncNSI(id string, check bool) {
 	if !uriSchemeDefine.Match(orig) {
 		fail(fmt.Errorf("%s: no `!define URI_SCHEME \"...\"` line", projectNSI))
 	}
-	out := uriSchemeDefine.ReplaceAll(orig, []byte(`!define URI_SCHEME "`+id+`"`))
+	out := uriSchemeDefine.ReplaceAll(orig, []byte(`!define URI_SCHEME "`+id+`"${1}`)) // keep a CRLF ending
 	if bytes.Equal(out, orig) {
 		return
 	}

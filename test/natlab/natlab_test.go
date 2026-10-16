@@ -59,6 +59,11 @@ var scenarios = []scenario{
 		host: Site{NAT: NATSymmetric}, guest: Site{NAT: NATFullCone},
 	},
 	{
+		// The table's other "fails" cell next to a symmetric host.
+		name: "symmetric_host_portrestricted_guest", expect: Fail, hostNAT: "symmetric",
+		host: Site{NAT: NATSymmetric}, guest: Site{NAT: NATPortRestricted}, advice: "diag.advice.swap_host",
+	},
+	{
 		name: "symmetric_both", expect: Fail, hostNAT: "symmetric",
 		host: Site{NAT: NATSymmetric}, guest: Site{NAT: NATSymmetric}, advice: "diag.advice.both_symmetric",
 	},

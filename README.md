@@ -56,9 +56,12 @@ are suspicious of it, as they are of most new software.
 
   Take `SHA256SUMS.txt` from the GitHub Releases page: a copy from the same
   mirror as the download proves nothing on its own. If you can't reach
-  GitHub, check the copy's signature with [minisign](https://jedisct1.github.io/minisign/)
+  GitHub, download `SHA256SUMS.txt` and its signature `SHA256SUMS.txt.minisig`
+  from the same mirror folder as the installer (for example
+  `https://updates.jinome.org/lanyard/0.1.0/SHA256SUMS.txt.minisig`), and
+  check the signature with [minisign](https://jedisct1.github.io/minisign/)
   and the LANyard release key (also built into the app, which checks update
-  notices the same way):
+  notices the same way). The first pre-release, 0.1.0-rc.1, has no such signature.
 
   ```
   minisign -Vm SHA256SUMS.txt -P RWQHDXQP4qb/hcqaPHhgkXMW0LvO9nKTV/8Ca/Daqp7g7zvRsLHKhxKW
@@ -155,6 +158,12 @@ cd gui && wails build -platform windows/amd64 -nsis   # app + installer (Wails v
 sudo go test -tags natlab ./test/natlab     # NAT matrix in network namespaces (Linux, root)
 ```
 
+The repository uses LF line endings everywhere (`.gitattributes`). A Windows
+checkout made before that rule existed still has CRLF files, which makes
+gofmt and `brandsync -check` fail; commit or stash your changes, then run
+`git rm --cached -r . && git reset --hard` once to check everything out again
+with LF.
+
 The product name lives in one file, `internal/brand/brand.json`; run
 `go run ./tools/brandsync` after changing it. Contributions welcome — see
 [docs/DECISIONS.md](docs/DECISIONS.md) for design choices and
@@ -188,7 +197,7 @@ v1 只发布 Windows 版，代码同样可以在 macOS 和 Linux 上编译。
   Get-FileHash .\LANyard-1.0.0-windows-amd64-setup.exe   # 与 SHA256SUMS.txt 对比
   ```
 
-  `SHA256SUMS.txt` 请从 GitHub Releases 页面获取：和安装包来自同一个镜像的副本本身证明不了什么。如果打不开 GitHub，可以用 [minisign](https://jedisct1.github.io/minisign/) 和后院联机的发布公钥（软件内置同一个公钥，用来验证更新通知）检查副本的签名：
+  `SHA256SUMS.txt` 请从 GitHub Releases 页面获取：和安装包来自同一个镜像的副本本身证明不了什么。如果打不开 GitHub，请从镜像上安装包所在的同一个文件夹下载 `SHA256SUMS.txt` 和它的签名 `SHA256SUMS.txt.minisig`（例如 `https://updates.jinome.org/lanyard/0.1.0/SHA256SUMS.txt.minisig`），再用 [minisign](https://jedisct1.github.io/minisign/) 和后院联机的发布公钥（软件内置同一个公钥，用来验证更新通知）检查签名。最早的预发布版 0.1.0-rc.1 没有这个签名。
 
   ```
   minisign -Vm SHA256SUMS.txt -P RWQHDXQP4qb/hcqaPHhgkXMW0LvO9nKTV/8Ca/Daqp7g7zvRsLHKhxKW
@@ -241,5 +250,7 @@ v1 只发布 Windows 版，代码同样可以在 macOS 和 Linux 上编译。
 ### 编译
 
 见上方英文部分的 *Building*。产品名称只在 `internal/brand/brand.json` 一个文件中定义。
+
+仓库统一使用 LF 换行（`.gitattributes`）。在这条规则加入之前检出的 Windows 工作区仍是 CRLF，会导致 gofmt 和 `brandsync -check` 失败：先提交或暂存你的改动，然后运行一次 `git rm --cached -r . && git reset --hard`，按 LF 重新检出全部文件。
 
 许可证：[GPL-3.0](LICENSE)。

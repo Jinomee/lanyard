@@ -17,7 +17,8 @@ import (
 // Planned v1.1 flow: the host calls Allocate and adds the relay address as a
 // candidate (kind "relay") to its invite; the guest's connect strategies get a
 // "relay" entry that dials the host's relayed address through its own
-// allocation. Nothing else in the engine needs to change.
+// allocation. This is not wired up yet: connect and the engine will need a
+// relay candidate kind, a strategy, and a setting to enable it.
 type Relay interface {
 	// Name identifies the relay in logs and diagnostics.
 	Name() string

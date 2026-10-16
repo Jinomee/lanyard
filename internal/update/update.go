@@ -108,7 +108,7 @@ func Verify(pk minisign.PublicKey, manifest, sig []byte) (*Manifest, error) {
 	if err := json.Unmarshal(manifest, &m); err != nil {
 		return nil, ErrManifest
 	}
-	if m.Product != brand.Name() || parseVersion(m.Version) == nil {
+	if _, ok := parseVersion(m.Version); m.Product != brand.Name() || !ok {
 		return nil, ErrManifest
 	}
 	return &m, nil
@@ -167,7 +167,11 @@ func (c *Checker) Check(ctx context.Context) Result {
 		c.Client = &http.Client{}
 	}
 	lastErr := ErrUnreachable
-	var stale *Result
+	// A source's "no update" is not final: an outdated mirror, one replaying
+	// an old (validly signed) manifest, or a pre-release this user isn't
+	// offered must not hide a newer release on another source. So the first
+	// source that offers an update wins; otherwise the first answer is kept.
+	var fallback *Result
 	for _, s := range c.Sources {
 		sctx, cancel := context.WithTimeout(ctx, s.Timeout)
 		m, err := c.fromSource(sctx, s)
@@ -180,7 +184,6 @@ func (c *Checker) Check(ctx context.Context) Result {
 			continue
 		}
 		r := res
-		r.Attempts = append([]string(nil), res.Attempts...)
 		r.Source, r.Latest, r.NotesURL = s.Name, m.Version, m.NotesURL
 		r.Notes = m.Notes[c.Lang]
 		if r.Notes == "" {
@@ -189,24 +192,19 @@ func (c *Checker) Check(ctx context.Context) Result {
 		// Pre-releases are only offered to people already running one.
 		r.Available = Newer(m.Version, c.Current) && (!isPrerelease(m.Version) || isPrerelease(c.Current))
 		if r.Available {
+			res.Attempts = append(res.Attempts, s.Name+": "+m.Version)
+			r.Attempts = res.Attempts
 			r.Download = preferSource(pick(m.Files, c.Installed), s.URL)
+			return r
 		}
-		// A validly signed but older manifest (an outdated mirror, or one
-		// replaying an old release) must not hide a newer one elsewhere.
-		if Newer(c.Current, m.Version) {
-			res.Attempts = append(res.Attempts, s.Name+": older than this version ("+m.Version+")")
-			if stale == nil {
-				r.Attempts = res.Attempts
-				stale = &r
-			}
-			continue
+		res.Attempts = append(res.Attempts, s.Name+": "+m.Version+" (no update)")
+		if fallback == nil {
+			fallback = &r
 		}
-		r.Attempts = append(r.Attempts, s.Name+": ok")
-		return r
 	}
-	if stale != nil {
-		stale.Attempts = res.Attempts
-		return *stale
+	if fallback != nil {
+		fallback.Attempts = res.Attempts
+		return *fallback
 	}
 	res.Error = lastErr.Error()
 	return res
@@ -275,45 +273,97 @@ func pick(files []File, installed bool) *File {
 	return fallback
 }
 
-// parseVersion parses "1.2.3" or "v1.2.3-rc.1" into [major minor patch pre?].
-func parseVersion(v string) []int {
+// version is a parsed "1.2.3" or "v1.2.3-rc.1".
+type version struct {
+	core [3]int
+	pre  []string // pre-release identifiers; nil for a release
+}
+
+func parseVersion(v string) (version, bool) {
 	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
 	core, pre, hasPre := strings.Cut(v, "-")
+	core, _, _ = strings.Cut(core, "+") // build metadata never matters
 	parts := strings.Split(core, ".")
 	if len(parts) != 3 {
-		return nil
+		return version{}, false
 	}
-	out := make([]int, 4)
+	var out version
 	for i, p := range parts {
 		n, err := strconv.Atoi(p)
 		if err != nil || n < 0 {
-			return nil
+			return version{}, false
 		}
-		out[i] = n
+		out.core[i] = n
 	}
-	// Releases sort after pre-releases of the same version.
-	out[3] = 1
 	if hasPre {
-		out[3] = 0
-		_ = pre
+		pre, _, _ = strings.Cut(pre, "+")
+		if pre == "" {
+			return version{}, false
+		}
+		out.pre = strings.Split(pre, ".")
 	}
-	return out
+	return out, true
+}
+
+// compare orders versions like SemVer 2.0: core numbers, then a release
+// after its pre-releases, then pre-release identifiers one by one (numeric
+// ones numerically and before alphanumeric ones; more identifiers win a tie).
+func (a version) compare(b version) int {
+	for i := range a.core {
+		if c := cmpInt(a.core[i], b.core[i]); c != 0 {
+			return c
+		}
+	}
+	switch {
+	case a.pre == nil && b.pre == nil:
+		return 0
+	case a.pre == nil:
+		return 1
+	case b.pre == nil:
+		return -1
+	}
+	for i := 0; i < len(a.pre) && i < len(b.pre); i++ {
+		x, y := a.pre[i], b.pre[i]
+		nx, ex := strconv.Atoi(x)
+		ny, ey := strconv.Atoi(y)
+		switch {
+		case ex == nil && ey == nil:
+			if c := cmpInt(nx, ny); c != 0 {
+				return c
+			}
+		case ex == nil:
+			return -1
+		case ey == nil:
+			return 1
+		default:
+			if c := strings.Compare(x, y); c != 0 {
+				return c
+			}
+		}
+	}
+	return cmpInt(len(a.pre), len(b.pre))
+}
+
+func cmpInt(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
 }
 
 // Newer reports whether a is a newer version than b. Unparseable versions
 // (e.g. development builds) are treated as 0.0.0-dev.
 func Newer(a, b string) bool {
-	va, vb := parseVersion(a), parseVersion(b)
-	if va == nil {
+	va, ok := parseVersion(a)
+	if !ok {
 		return false
 	}
-	if vb == nil {
-		vb = []int{0, 0, 0, 0}
+	vb, ok := parseVersion(b)
+	if !ok {
+		vb = version{pre: []string{"dev"}}
 	}
-	for i := range va {
-		if va[i] != vb[i] {
-			return va[i] > vb[i]
-		}
-	}
-	return false
+	return va.compare(vb) > 0
 }

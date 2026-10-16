@@ -59,6 +59,9 @@ ManifestDPIAware true
 Name "${INFO_PRODUCTNAME}"
 OutFile "..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe"
 InstallDir "$PROGRAMFILES64\${INFO_PRODUCTNAME}"
+; Upgrades go where the previous version is (NSIS strips the file name from
+; the .exe path), including installs made before the LANyard subfolder rule.
+InstallDirRegKey HKLM "${UNINST_KEY}" "DisplayIcon"
 ShowInstDetails show
 
 !define FW_RULE "${INFO_PRODUCTNAME}"
@@ -71,8 +74,10 @@ Function RunUnelevated
 FunctionEnd
 
 ; If the user picks a folder that is not already a LANyard folder (for example
-; D:\Games), install into a LANyard subfolder of it.
+; D:\Games), install into a LANyard subfolder of it, unless LANyard is already
+; installed right there (an older install: upgrade it in place).
 Function DirectoryLeave
+   IfFileExists "$INSTDIR\${PRODUCT_EXECUTABLE}" done
    ${GetFileName} "$INSTDIR" $R0
    StrCmp $R0 "${INFO_PRODUCTNAME}" done
    StrCpy $INSTDIR "$INSTDIR\${INFO_PRODUCTNAME}"
