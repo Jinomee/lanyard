@@ -173,10 +173,10 @@ func TestConfusableLetters(t *testing.T) {
 
 func TestErrors(t *testing.T) {
 	cases := map[string]error{
-		"":                  ErrEmpty,
-		"hello":             ErrPrefix,
-		"LY1-":              ErrTruncated,
-		"LY1-!!!!":          ErrCharacters,
+		"":                     ErrEmpty,
+		"hello":                ErrPrefix,
+		"LY1-":                 ErrTruncated,
+		"LY1-!!!!":             ErrCharacters,
 		"LY1-0000000000000000": ErrChecksum,
 	}
 	for in, want := range cases {
