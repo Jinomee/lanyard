@@ -128,8 +128,7 @@ func NewLab(t *testing.T, bin, help string, host, guest Site) *Lab {
 	l := &Lab{t: t, work: t.TempDir(), bin: bin, help: help, v6: HasIPv6()}
 	t.Cleanup(l.Close)
 
-	run(t, "ip", "netns", "add", inetNS)
-	ipns(t, inetNS, "link", "set", "lo", "up")
+	l.addNS(inetNS)
 	ipns(t, inetNS, "link", "add", "br0", "type", "bridge")
 	ipns(t, inetNS, "link", "set", "br0", "up")
 	ipns(t, inetNS, "addr", "add", stunA+"/24", "dev", "br0")
@@ -141,7 +140,38 @@ func NewLab(t *testing.T, bin, help string, host, guest Site) *Lab {
 	}
 	l.site("h", host)
 	l.site("g", guest)
+	l.waitIPv6Ready()
 	return l
+}
+
+// addNS creates a namespace with loopback up and IPv6 duplicate address
+// detection off (link-local addresses would otherwise stay "tentative" for
+// a second or two, and neighbour discovery cannot work until they're not).
+func (l *Lab) addNS(ns string) {
+	run(l.t, "ip", "netns", "add", ns)
+	ipns(l.t, ns, "link", "set", "lo", "up")
+	if l.v6 {
+		nsexec(l.t, ns, "sysctl", "-qw", "net.ipv6.conf.default.accept_dad=0", "net.ipv6.conf.all.accept_dad=0")
+	}
+}
+
+// waitIPv6Ready waits until no namespace has a tentative IPv6 address.
+func (l *Lab) waitIPv6Ready() {
+	if !l.v6 {
+		return
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		busy := false
+		for _, ns := range []string{inetNS, "ly-hr", "ly-h", "ly-gr", "ly-g"} {
+			out, _ := exec.Command("ip", "-n", ns, "-6", "addr", "show", "tentative").Output()
+			busy = busy || len(strings.TrimSpace(string(out))) > 0
+		}
+		if !busy {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // vethPair creates a veth pair with each end born directly inside its
@@ -165,15 +195,13 @@ func (l *Lab) site(key string, s Site) {
 	t := l.t
 	a := addrs[key]
 	for _, ns := range []string{a.router, a.ns} {
-		run(t, "ip", "netns", "add", ns)
-		ipns(t, ns, "link", "set", "lo", "up")
+		l.addNS(ns)
 	}
 	nsexec(t, a.router, "sysctl", "-qw", "net.ipv4.ip_forward=1")
 
 	// Router WAN: directly on the internet, or behind a carrier NAT.
 	if s.CGNAT {
-		run(t, "ip", "netns", "add", a.carrier)
-		ipns(t, a.carrier, "link", "set", "lo", "up")
+		l.addNS(a.carrier)
 		nsexec(t, a.carrier, "sysctl", "-qw", "net.ipv4.ip_forward=1")
 		l.attachToInternet(a.carrier, "wan", key+"c-br")
 		ipns(t, a.carrier, "addr", "add", a.carrierWAN4+"/24", "dev", "wan")
