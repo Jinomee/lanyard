@@ -152,10 +152,31 @@ func dump(t *testing.T, l *Lab) {
 			t.Logf("---- %s ----\n%s", name, log)
 		}
 	}
+	// Where do packets die? Capture briefly on every hop while the guest
+	// keeps retrying, and show conntrack state of the routers.
+	type capture struct{ ns, dev string }
+	caps := []capture{{"ly-gr", "lan"}, {"ly-gr", "wan"}, {"ly-inet", "br0"}, {"ly-hr", "wan"}, {"ly-hr", "lan"}}
+	outs := make([][]byte, len(caps))
+	done := make(chan int, len(caps))
+	for i, c := range caps {
+		go func() {
+			outs[i], _ = exec.Command("ip", "netns", "exec", c.ns, "timeout", "4", "tcpdump", "-lnni", c.dev,
+				"-c", "20", "udp and not port 3478 and not port 3479 and not port 4445 and not port 1900 and not port 5351").CombinedOutput()
+			done <- i
+		}()
+	}
+	for range caps {
+		<-done
+	}
+	for i, c := range caps {
+		t.Logf("---- tcpdump %s %s ----\n%s", c.ns, c.dev, outs[i])
+	}
 	for _, ns := range []string{"ly-hr", "ly-gr", "ly-hc", "ly-inet"} {
-		out, err := exec.Command("ip", "netns", "exec", ns, "cat", "/proc/net/nf_conntrack").CombinedOutput()
-		if err == nil {
+		if out, err := exec.Command("ip", "netns", "exec", ns, "conntrack", "-L", "-p", "udp").CombinedOutput(); err == nil {
 			t.Logf("---- conntrack %s ----\n%s", ns, out)
+		}
+		if out, err := exec.Command("ip", "netns", "exec", ns, "sysctl", "net.bridge.bridge-nf-call-iptables", "net.ipv4.ip_forward").CombinedOutput(); err == nil {
+			t.Logf("---- sysctl %s ----\n%s", ns, out)
 		}
 	}
 }

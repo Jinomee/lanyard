@@ -43,7 +43,9 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Unit tests
         if: runner.os == 'Windows'
-        run: go test -count=1 ./...
+        # -p 1: several packages bind the Minecraft LAN port 4445; on Windows a
+        # unicast datagram to a shared port reaches only one socket.
+        run: go test -count=1 -p 1 ./...
       - name: Fuzz (short)
         if: runner.os == 'Linux'
         run: |
@@ -94,7 +96,7 @@ jobs:
       - name: Install nftables, iproute2, miniupnpd
         run: |
           sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nftables iproute2 miniupnpd-nftables
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nftables iproute2 miniupnpd-nftables conntrack tcpdump
           # The package may start a system-wide daemon; the lab runs its own per namespace.
           sudo systemctl stop miniupnpd 2>/dev/null || true
           sudo systemctl disable miniupnpd 2>/dev/null || true
