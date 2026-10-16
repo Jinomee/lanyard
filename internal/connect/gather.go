@@ -129,7 +129,10 @@ func Gather(ctx context.Context, opt GatherOptions) *Gathered {
 
 	// IPv4 NAT behaviour
 	r.Mapping, r.PublicV4 = stunx.ClassifyMapping(r.STUN4, netinfo.AllLocal())
-	r.UDPBlocked = !slices.ContainsFunc(r.STUN4, stunx.ServerResult.OK) && r.IPv6Stun != "ok"
+	// Blocked only if requests actually went out and nothing came back: with
+	// no servers configured, or none resolvable, we simply don't know.
+	sent := slices.ContainsFunc(r.STUN4, func(x stunx.ServerResult) bool { return x.Resolved.IsValid() })
+	r.UDPBlocked = sent && !slices.ContainsFunc(r.STUN4, stunx.ServerResult.OK) && r.IPv6Stun != "ok"
 	if r.Mapping == stunx.MappingNone {
 		r.Filtering = stunx.FilteringNone
 	}

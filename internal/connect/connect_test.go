@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jinomee/lanyard/internal/joincode"
+	"github.com/jinomee/lanyard/internal/portmap"
 	"github.com/jinomee/lanyard/internal/stunx"
 	"github.com/jinomee/lanyard/internal/transport"
 )
@@ -260,6 +261,8 @@ func TestDiagnoseRules(t *testing.T) {
 		{"both symmetric", sym, joincode.FlagMapDep, true, "both_symmetric,host_enable_upnp,host_firewall,hotspot"},
 		{"host symmetric", cone, joincode.FlagMapDep | joincode.FlagIPv6, true, "swap_host,host_enable_upnp,ipv6_firewall,host_firewall"},
 		{"guest symmetric, host cgnat", sym, joincode.FlagMapEIM | joincode.FlagCGNAT, true, "guest_symmetric,host_cgnat,host_firewall,hotspot"},
+		// A port-mapped host's NAT type is irrelevant: no "swap host", no "enable UPnP".
+		{"host symmetric but port-mapped", cone, joincode.FlagMapDep | joincode.FlagPortMapped, true, "ipv6_host_missing,host_firewall,hotspot"},
 	}
 	for _, c := range cases {
 		got := keys(DiagnoseJoin(c.local, &joincode.Invite{Flags: c.flags}, nil, c.reply))
@@ -267,7 +270,61 @@ func TestDiagnoseRules(t *testing.T) {
 			t.Errorf("%s:\n got %s\nwant %s", c.name, got, c.want)
 		}
 	}
-	if d := HostOutlook(sym); d.Summary.Key != "diag.host.hard" {
+	if d := HostOutlook(sym); d.Summary.Key != "diag.host.hard" || len(d.Advice) != 1 || d.Advice[0].Key != "diag.host.enable_upnp" {
 		t.Errorf("outlook %+v", d)
+	}
+	// The host outlook speaks to the host, never about "your friend".
+	cg := &Report{Mapping: stunx.MappingIndependent, CGNAT: true}
+	if d := HostOutlook(cg); len(d.Advice) != 1 || d.Advice[0].Key != "diag.host.cgnat" {
+		t.Errorf("outlook %+v", d)
+	}
+	// A port mapping outranks a failed STUN check.
+	mapped := &Report{UDPBlocked: true}
+	mapped.PortMap.Mapping = &portmap.Mapping{Protocol: "upnp"}
+	if d := HostOutlook(mapped); d.Summary.Key != "diag.host.good" {
+		t.Errorf("outlook %+v", d)
+	}
+}
+
+func TestNoSTUNServersIsNotUDPBlocked(t *testing.T) {
+	g := Gather(context.Background(), GatherOptions{EP4: guestEP(t), STUNServers: nil, Timeout: time.Second})
+	if g.Report.UDPBlocked {
+		t.Fatal("no STUN query was sent, so nothing says UDP is blocked")
+	}
+	g = Gather(context.Background(), GatherOptions{EP4: guestEP(t), STUNServers: []string{"nonexistent.invalid:3478"}, Timeout: time.Second})
+	if g.Report.UDPBlocked {
+		t.Fatal("unresolvable servers say nothing about UDP")
+	}
+}
+
+// A captured host punch resent from other addresses must not make the guest
+// dial those addresses.
+func TestReplayedPunchIgnored(t *testing.T) {
+	h := startHost(t)
+	h.inv.Candidates = []joincode.Candidate{{Kind: joincode.CandReflexive, Addr: deadAddr(t)}}
+	g := guestEP(t)
+	session := [4]byte{1, 2, 3, 4}
+	pkt := transport.MakePunch(h.inv.Secret, transport.RoleHost, session)
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		for range 10 {
+			c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+			if err != nil {
+				return
+			}
+			_, _ = c.WriteToUDPAddrPort(pkt, netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), g.Port()))
+			_ = c.Close()
+		}
+	}()
+	var mu sync.Mutex
+	var learned []netip.AddrPort
+	_, _ = Join(ctx, JoinOptions{EP4: g, Invite: h.inv, Session: session,
+		OnPunch: func(from netip.AddrPort) { mu.Lock(); learned = append(learned, from); mu.Unlock() }})
+	mu.Lock()
+	defer mu.Unlock()
+	if len(learned) != 1 {
+		t.Fatalf("learned %d addresses from one punch packet: %v", len(learned), learned)
 	}
 }

@@ -118,7 +118,9 @@ func (p *pcpMapper) roundTrip(ctx context.Context, internalPort, suggested uint1
 	dst := net.UDPAddrFromAddrPort(netip.AddrPortFrom(p.gw, port))
 	buf := make([]byte, 1100)
 	delay := 250 * time.Millisecond
-	for ctx.Err() == nil {
+	// RFC 6887 retransmits for longer, but a router that ignores five
+	// requests (about 8 s) is not going to answer.
+	for try := 0; try < 5 && ctx.Err() == nil; try++ {
 		if _, err := c.WriteToUDP(req, dst); err != nil {
 			return netip.AddrPort{}, 0, err
 		}
@@ -141,9 +143,17 @@ func (p *pcpMapper) roundTrip(ctx context.Context, internalPort, suggested uint1
 func (p *pcpMapper) add(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (netip.AddrPort, time.Duration, error) {
 	ap, ttl, err := p.roundTrip(ctx, internalPort, externalPort, uint32(lifetime/time.Second))
 	if errors.Is(err, ErrPrivateExternal) {
-		_ = p.remove(context.WithoutCancel(ctx), internalPort, 0) // the mapping exists but is useless
+		// The mapping exists but is useless; remove it even if ctx is done.
+		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		_ = p.remove(c, internalPort, 0)
+		cancel()
 	}
 	return ap, time.Duration(ttl) * time.Second, err
+}
+
+func (p *pcpMapper) renew(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (time.Duration, error) {
+	_, ttl, err := p.add(ctx, internalPort, externalPort, lifetime)
+	return ttl, err
 }
 
 func (p *pcpMapper) remove(ctx context.Context, internalPort, _ uint16) error {

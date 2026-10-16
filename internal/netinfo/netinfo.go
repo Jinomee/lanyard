@@ -83,12 +83,20 @@ func Local() Addrs {
 	} else if len(out.AllV4) > 0 {
 		out.LANv4 = out.AllV4[0]
 	}
-	if pref := preferredSource("udp6", "[2400:3200::1]:53"); pref.IsValid() {
-		sort.SliceStable(out.GlobalV6, func(i, j int) bool {
-			return out.GlobalV6[i] == pref && out.GlobalV6[j] != pref
-		})
-	}
+	sortV6(out.GlobalV6, temporaryV6(), preferredSource("udp6", "[2400:3200::1]:53"))
 	return out
+}
+
+// sortV6 orders global IPv6 addresses for an invite: stable addresses before
+// temporary (privacy) ones, which the OS rotates daily while a code may be
+// used for longer; within each group the OS's preferred source first.
+func sortV6(as []netip.Addr, temporary map[netip.Addr]bool, pref netip.Addr) {
+	sort.SliceStable(as, func(i, j int) bool {
+		if ti, tj := temporary[as[i]], temporary[as[j]]; ti != tj {
+			return !ti
+		}
+		return as[i] == pref && as[j] != pref
+	})
 }
 
 func preferredSource(network, dst string) netip.Addr {

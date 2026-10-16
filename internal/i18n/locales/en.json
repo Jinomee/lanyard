@@ -314,5 +314,7 @@
   "diag.host.hard": "Your router is strict, so many friends won't be able to connect. Enable UPnP on your router, or let a friend host.",
   "diag.host.unknown": "Your network type couldn't be determined. Friends can still try to join.",
   "diag.host.udp_blocked": "Your network seems to block the traffic {app} needs (UDP). Friends probably can't connect. Try another network.",
-  "diag.host.ipv6_ok": "IPv6 works on your connection, which helps friends who also have IPv6."
+  "diag.host.ipv6_ok": "IPv6 works on your connection, which helps friends who also have IPv6.",
+  "diag.host.enable_upnp": "Turn on UPnP in your router (usually in the router's web page under \"NAT\", \"Advanced\" or \"UPnP\"), then start hosting again.",
+  "diag.host.cgnat": "Your internet provider shares your public address with other customers (CGNAT). Ask the provider for a public IP address or IPv6, or let a friend host instead."
 }

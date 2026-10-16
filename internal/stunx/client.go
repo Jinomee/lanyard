@@ -274,16 +274,25 @@ func ProbeFiltering(ctx context.Context, io PacketIO, server netip.AddrPort, wai
 	if !first.Other.IsValid() {
 		return FilteringUnknown, nil
 	}
+	// A server that ignores CHANGE-REQUEST answers from its primary address;
+	// that proves nothing about our filter, so the answer must come from
+	// elsewhere to count.
 	c, cancel = context.WithTimeout(ctx, wait)
-	_, err = Binding(c, io, server, ChangeIP|ChangePort)
+	r, err := Binding(c, io, server, ChangeIP|ChangePort)
 	cancel()
 	if err == nil {
+		if r.From.Addr() == server.Addr() || r.From.Port() == server.Port() {
+			return FilteringUnknown, nil
+		}
 		return FilteringIndependent, nil
 	}
 	c, cancel = context.WithTimeout(ctx, wait)
-	_, err = Binding(c, io, server, ChangePort)
+	r, err = Binding(c, io, server, ChangePort)
 	cancel()
 	if err == nil {
+		if r.From.Addr() != server.Addr() || r.From.Port() == server.Port() {
+			return FilteringUnknown, nil
+		}
 		return FilteringAddress, nil
 	}
 	return FilteringAddressAndPort, nil

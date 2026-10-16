@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/stun/v3"
+
 	"github.com/jinomee/lanyard/internal/transport"
 )
 
@@ -100,5 +102,45 @@ func TestClassifyMapping(t *testing.T) {
 		if got, _ := ClassifyMapping(c.in, local); got != c.want {
 			t.Errorf("%s: got %v want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// A server that advertises OTHER-ADDRESS but answers every request from its
+// primary address must not make an unknown filter look open.
+func TestFilteringIgnoresServerThatDoesNotChange(t *testing.T) {
+	c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			n, from, err := c.ReadFromUDP(buf)
+			if err != nil {
+				return
+			}
+			req := &stun.Message{Raw: append([]byte(nil), buf[:n]...)}
+			if req.Decode() != nil {
+				continue
+			}
+			resp, err := stun.Build(stun.NewTransactionIDSetter(req.TransactionID), stun.BindingSuccess,
+				&stun.XORMappedAddress{IP: from.IP, Port: from.Port},
+				&stun.OtherAddress{IP: net.IPv4(127, 0, 0, 2), Port: 3479}, stun.Fingerprint)
+			if err == nil {
+				_, _ = c.WriteToUDP(resp.Raw, from)
+			}
+		}
+	}()
+	ep, err := transport.ListenUDP(4, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ep.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	f, err := ProbeFiltering(ctx, ep, c.LocalAddr().(*net.UDPAddr).AddrPort(), 500*time.Millisecond)
+	if err != nil || f != FilteringUnknown {
+		t.Fatalf("filtering = %v, %v; want unknown", f, err)
 	}
 }

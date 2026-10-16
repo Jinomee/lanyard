@@ -55,6 +55,11 @@ func ParsePunch(secret [joincode.SecretLen]byte, b []byte) (role byte, session [
 	return b[4], session, true
 }
 
+// PunchNonce returns the random nonce of a punch packet (already verified
+// with ParsePunch). Every packet a peer sends has a fresh one, so a nonce seen
+// twice is a replay.
+func PunchNonce(b []byte) [4]byte { return [4]byte(b[9:13]) }
+
 func punchMAC(secret [joincode.SecretLen]byte, body []byte) []byte {
 	m := hmac.New(sha256.New, secret[:])
 	m.Write([]byte("lanyard punch v1"))

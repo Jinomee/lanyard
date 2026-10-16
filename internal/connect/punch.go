@@ -39,14 +39,16 @@ func HostPunch(ctx context.Context, opt PunchOptions) {
 	t := time.NewTicker(opt.Interval)
 	defer t.Stop()
 	for {
-		pkt := transport.MakePunch(opt.Secret, transport.RoleHost, opt.Reply.Session)
 		for _, a := range targets {
 			ep := opt.EP4
 			if !a.Addr().Is4() {
 				ep = opt.EP6
 			}
 			if ep != nil {
-				_ = ep.WriteTo(pkt, a)
+				// A fresh nonce per packet: the guest accepts each nonce once
+				// (replay protection), and a symmetric NAT may deliver the
+				// packets for different targets from different addresses.
+				_ = ep.WriteTo(transport.MakePunch(opt.Secret, transport.RoleHost, opt.Reply.Session), a)
 			}
 		}
 		select {

@@ -69,7 +69,8 @@ func DiagnoseJoin(local *Report, inv *joincode.Invite, attempts []Attempt, reply
 	if local != nil && local.UDPBlocked {
 		add("diag.advice.udp_blocked")
 	}
-	hostSym := inv.Flags.Has(joincode.FlagMapDep)
+	// With a port mapping the host's own NAT behaviour doesn't matter.
+	hostSym := inv.Flags.Has(joincode.FlagMapDep) && !inv.Flags.Has(joincode.FlagPortMapped)
 	guestSym := local != nil && local.Mapping == stunx.MappingDependent
 	switch {
 	case hostSym && guestSym:
@@ -106,21 +107,23 @@ func DiagnoseJoin(local *Report, inv *joincode.Invite, attempts []Attempt, reply
 // be able to join. Shown on the Host screen before anyone connects.
 func HostOutlook(r *Report) Diagnosis {
 	d := Diagnosis{}
+	// A working port mapping beats every other indicator.
 	switch {
-	case r.UDPBlocked && !r.IPv6:
-		d.Summary = Advice{Key: "diag.host.udp_blocked"}
 	case (r.PortMap.Mapping != nil && !r.CGNAT) || r.NATType == NATOpen || r.NATType == NATFullCone:
 		d.Summary = Advice{Key: "diag.host.good"}
+	case r.UDPBlocked && !r.IPv6:
+		d.Summary = Advice{Key: "diag.host.udp_blocked"}
 	case r.Mapping == stunx.MappingIndependent:
 		d.Summary = Advice{Key: "diag.host.reply_likely"}
 	case r.Mapping == stunx.MappingDependent:
 		d.Summary = Advice{Key: "diag.host.hard"}
-		d.Advice = append(d.Advice, Advice{Key: "diag.advice.host_enable_upnp"})
 	default:
 		d.Summary = Advice{Key: "diag.host.unknown"}
 	}
 	if r.CGNAT {
-		d.Advice = append(d.Advice, Advice{Key: "diag.advice.host_cgnat"})
+		d.Advice = append(d.Advice, Advice{Key: "diag.host.cgnat"})
+	} else if d.Summary.Key != "diag.host.good" && d.Summary.Key != "diag.host.udp_blocked" && r.PortMap.Mapping == nil {
+		d.Advice = append(d.Advice, Advice{Key: "diag.host.enable_upnp"})
 	}
 	if r.IPv6 {
 		d.Advice = append(d.Advice, Advice{Key: "diag.host.ipv6_ok"})

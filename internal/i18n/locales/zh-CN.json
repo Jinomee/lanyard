@@ -314,5 +314,7 @@
   "diag.host.hard": "你的路由器很严格，很多朋友可能连不上。请在路由器上开启 UPnP，或者让朋友开房。",
   "diag.host.unknown": "无法判断你的网络类型，朋友仍然可以尝试加入。",
   "diag.host.udp_blocked": "你的网络似乎屏蔽了{app}需要的 UDP 流量，朋友可能连不上。请换个网络试试。",
-  "diag.host.ipv6_ok": "你的网络支持 IPv6，同样有 IPv6 的朋友更容易连上。"
+  "diag.host.ipv6_ok": "你的网络支持 IPv6，同样有 IPv6 的朋友更容易连上。",
+  "diag.host.enable_upnp": "在路由器上开启 UPnP（通常在路由器管理页面的“NAT”“高级设置”或“UPnP”中），然后重新开始联机。",
+  "diag.host.cgnat": "你的运营商让很多用户共用公网地址（大内网）。可以向运营商申请公网 IP 或开通 IPv6，或者让朋友开房。"
 }

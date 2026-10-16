@@ -63,6 +63,11 @@ func (n *natpmpMapper) add(ctx context.Context, internalPort, externalPort uint1
 	}
 }
 
+func (n *natpmpMapper) renew(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (time.Duration, error) {
+	_, ttl, err := n.add(ctx, internalPort, externalPort, lifetime)
+	return ttl, err
+}
+
 func (n *natpmpMapper) remove(ctx context.Context, internalPort, _ uint16) error {
 	_, err := n.client(ctx).AddPortMapping("udp", int(internalPort), 0, 0)
 	return err

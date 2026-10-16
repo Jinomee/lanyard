@@ -118,6 +118,10 @@ type Joined struct {
 	Via  Attempt
 }
 
+// maxPeerRefl caps the addresses learned from host punches. A real host
+// reaches us from one or two (IPv4 and IPv6).
+const maxPeerRefl = 4
+
 type path struct {
 	strategy string
 	addr     netip.AddrPort
@@ -155,10 +159,25 @@ func Join(ctx context.Context, opt JoinOptions) (*Joined, error) {
 		phase: PhaseDirect, winner: make(chan won, 1)}
 
 	// Peer-reflexive learning: a valid host punch reveals the address the
-	// host's NAT actually uses toward us.
+	// host's NAT actually uses toward us. The MAC can't cover the source
+	// address (the host doesn't know it), so someone who captured a punch
+	// could resend it from elsewhere: each nonce counts once, and only a few
+	// learned addresses are dialed.
+	var seenMu sync.Mutex
+	seen := map[[4]byte]bool{}
 	learn := func(p transport.Packet) {
 		role, sess, ok := transport.ParsePunch(opt.Invite.Secret, p.Data)
 		if !ok || role != transport.RoleHost || sess != opt.Session {
+			return
+		}
+		n := transport.PunchNonce(p.Data)
+		seenMu.Lock()
+		replay := seen[n]
+		if !replay && len(seen) < 4096 {
+			seen[n] = true
+		}
+		seenMu.Unlock()
+		if replay {
 			return
 		}
 		if opt.OnPunch != nil {
@@ -209,6 +228,12 @@ wait:
 	}
 	cancel() // stop the other paths
 	j.wg.Wait()
+	// Another path may have finished its handshake just as this one won.
+	select {
+	case extra := <-j.winner:
+		_ = extra.conn.CloseWithError(transport.CodeDuplicate, "another path won")
+	default:
+	}
 	if opt.OnConnected != nil {
 		opt.OnConnected(w.att)
 	}
@@ -243,6 +268,18 @@ func (j *joiner) startPath(p path, delay time.Duration) {
 		default:
 		}
 		return
+	}
+	if p.strategy == StratPeerRefl {
+		n := 0
+		for _, a := range j.attempts {
+			if a.Strategy == StratPeerRefl {
+				n++
+			}
+		}
+		if n >= maxPeerRefl {
+			j.mu.Unlock()
+			return
+		}
 	}
 	a := &Attempt{Strategy: p.strategy, Addr: p.addr.String(), Phase: j.phase, Outcome: OutPending, Started: time.Now()}
 	poke := make(chan struct{}, 1)

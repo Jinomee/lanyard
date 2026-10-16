@@ -25,6 +25,7 @@ type Mapping struct {
 	m      mapper
 	cancel context.CancelFunc
 	done   chan struct{}
+	lost   bool // the router gave the port to someone else: never delete it
 }
 
 // mapper is one protocol implementation.
@@ -32,9 +33,15 @@ type mapper interface {
 	name() string
 	// add requests a mapping for internalPort, preferring externalPort.
 	add(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (ext netip.AddrPort, granted time.Duration, err error)
+	// renew extends the mapping add created, on exactly that external port.
+	// It must never create a mapping on another port.
+	renew(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (granted time.Duration, err error)
 	// remove deletes the mapping.
 	remove(ctx context.Context, internalPort, externalPort uint16) error
 }
+
+// errLost means the external port now belongs to another computer.
+var errLost = errors.New("port mapping taken over by another computer")
 
 // Result reports what each protocol did, for diagnostics.
 type Result struct {
@@ -158,9 +165,13 @@ func (m *Mapping) startRenew() {
 			case <-time.After(wait):
 			}
 			c, cancel := context.WithTimeout(ctx, 5*time.Second)
-			ext, ttl, err := m.m.add(c, m.Internal, m.External.Port(), defaultLifetime)
+			ttl, err := m.m.renew(c, m.Internal, m.External.Port(), defaultLifetime)
 			cancel()
-			if err == nil && ext.Port() == m.External.Port() {
+			if errors.Is(err, errLost) {
+				m.lost = true
+				return
+			}
+			if err == nil {
 				lifetime = ttl
 			}
 		}
@@ -175,6 +186,9 @@ func (m *Mapping) Close() error {
 	if m.cancel != nil {
 		m.cancel()
 		<-m.done
+	}
+	if m.lost {
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
