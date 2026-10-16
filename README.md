@@ -29,6 +29,31 @@ maintainer's mirror is listed there too):
 
 v1 ships for Windows. The code also builds for macOS and Linux.
 
+### "Windows protected your PC" or an antivirus warning
+
+LANyard is new and **not code-signed yet**. Windows code-signing certificates
+cost money, and the free option for open-source projects asks for an
+established project first. Until then, Windows and some antivirus programs
+are suspicious of it, as they are of most new software.
+
+* **SmartScreen** ("Windows protected your PC"): click **More info**, then
+  **Run anyway**. Only do this for files downloaded from this repository's
+  [Releases page](../../releases).
+* **Antivirus** (360, Tencent PC Manager / 腾讯电脑管家, Huorong / 火绒, Windows
+  Defender…): a new program that opens network connections is sometimes
+  flagged by mistake. Choose "trust" / "allow" for the file, and please use the
+  antivirus's *report a false positive* option. Each report helps the next
+  player.
+* **Check that your download is genuine.** Every release lists the SHA-256 of
+  each file in `SHA256SUMS.txt`. In PowerShell:
+
+  ```powershell
+  Get-FileHash .\LANyard-1.0.0-windows-amd64-setup.exe   # compare with SHA256SUMS.txt
+  ```
+
+  Release files are built by [GitHub Actions](.github/workflows/release.yml)
+  directly from the public source code, never on someone's PC.
+
 ### Host a world
 
 1. In Minecraft, open your world → **Esc → Open to LAN → Start LAN World**.
@@ -137,6 +162,20 @@ License: [GPL-3.0](LICENSE).
 * `lanyard-core-…` —— 无界面核心程序，支持 Windows/macOS/Linux（高级用户）
 
 v1 只发布 Windows 版，代码同样可以在 macOS 和 Linux 上编译。
+
+### Windows 提示“已保护你的电脑”或杀毒软件报毒
+
+后院联机是新软件，**暂时还没有代码签名**：Windows 代码签名证书需要付费，而面向开源项目的免费签名要求项目已有一定知名度。在此之前，Windows 和部分杀毒软件会对它有所警惕（大多数新软件都会这样）。
+
+* **SmartScreen**（“Windows 已保护你的电脑”）：点击 **更多信息**，再点 **仍要运行**。只对从本仓库 [Releases 页面](../../releases) 下载的文件这样做。
+* **杀毒软件**（360、腾讯电脑管家、火绒、Windows Defender 等）：会联网的新程序有时会被误报。请选择“信任”或“允许”该文件，并使用杀毒软件里的**误报反馈**功能提交，帮助后面的玩家。
+* **确认下载的文件是正版**：每个版本的 `SHA256SUMS.txt` 列出了所有文件的 SHA-256。在 PowerShell 中运行：
+
+  ```powershell
+  Get-FileHash .\LANyard-1.0.0-windows-amd64-setup.exe   # 与 SHA256SUMS.txt 对比
+  ```
+
+  所有发布文件都由 [GitHub Actions](.github/workflows/release.yml) 直接从公开源代码构建，不经过任何人的电脑。
 
 ### 开房（当房主）
 

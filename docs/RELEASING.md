@@ -42,20 +42,34 @@ static file host works, for example a server in mainland China or an
 object-storage bucket with a CDN. Because the manifest is signed, the mirror
 does not need to be trusted.
 
-### 3. Code signing via SignPath Foundation (free for OSS)
+### 3. Code signing (deferred: v1 ships unsigned)
 
-Unsigned Windows executables trigger SmartScreen warnings. To fix this:
+v1 is released **unsigned**. Windows SmartScreen and some antivirus products
+will warn until the app is signed and has built reputation. The README tells
+players what to do ("Windows protected your PC" section). Options for later:
 
-1. Apply at <https://signpath.org/apply> (needs: OSI license ✔, public repo,
-   release builds from CI ✔, no unsigned binaries in other channels).
-2. In SignPath, create a project with two artifact configurations:
-   `exe` (a single PE file) and `installer` (a single PE file).
-3. Add repository **variables** `SIGNPATH_ORGANIZATION_ID`,
-   `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_POLICY_SLUG` and the **secret**
-   `SIGNPATH_API_TOKEN`.
-4. The signing steps in `.github/workflows/release.yml` turn on automatically
-   once `SIGNPATH_ORGANIZATION_ID` is set. The flow is: sign `LANyard.exe` →
-   rebuild the NSIS installer around the signed exe → sign the installer.
+| Option | Cost | Notes |
+|---|---|---|
+| SignPath Foundation | free | Wants an established project (releases, users). Apply once LANyard has some. |
+| Certum Open Source Code Signing (SimplySign cloud) | about €49 the first year | Individuals qualify. Each signature needs a one-time code; CI can generate it from a stored TOTP secret behind a manually approved GitHub Environment. |
+| Azure Artifact Signing | US$9.99/month | Individuals only in the USA/Canada. Official GitHub Action. |
+
+With any of them, reputation builds on the **certificate**, so it carries over
+between releases. Unsigned files start from zero every release. The SignPath
+steps in `.github/workflows/release.yml` are already in place and skip
+themselves until `SIGNPATH_ORGANIZATION_ID` is set. Another provider would
+replace those steps (sign `LANyard.exe` → rebuild installer → sign installer).
+
+### 4. Before announcing each release: antivirus false positives
+
+New unsigned network software is often flagged, especially by the antivirus
+products common in mainland China. After the release workflow finishes:
+
+- [ ] Upload the installer and the portable exe to [VirusTotal](https://www.virustotal.com/) and link the reports in the release notes.
+- [ ] Submit both files to Microsoft as **Software developer → Incorrectly detected as malware/malicious**: <https://www.microsoft.com/en-us/wdsi/filesubmission>.
+- [ ] 360 安全卫士: submit through 360's software/developer platform or in-app 误报反馈. Developers have reported 360 asking for ID documents. Check their current requirements.
+- [ ] 腾讯电脑管家 and 火绒: use each product's in-app 误报反馈 / 样本提交 (false-positive report).
+- [ ] Record what was submitted and any detection names in the release issue, so the next release can reference them.
 
 ## Cutting a release
 

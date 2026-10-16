@@ -10,6 +10,8 @@ Record results in the release PR or issue (copy the table at the end).
 
 ## Setup (both people)
 
+- [ ] Download from the Releases page in a browser, as a player would. Windows shows "Windows protected your PC" for the unsigned build; follow the README steps (More info → Run anyway). Note any antivirus warnings (product and detection name) for the false-positive checklist in RELEASING.md.
+
 - [ ] Note your setup: ISP, country/city, router model, Wi-Fi or Ethernet, and whether you are on a phone hotspot.
 - [ ] Install with the **installer** on one PC and use the **portable exe** on the other (this covers both firewall paths).
 - [ ] Both: open **Diagnostics → Test my network** and write down NAT type, IPv6, port mapping, CGNAT and how many STUN servers answered. In China, check that at least the Xiaomi/Bilibili/Douyu/CDNBye servers answer.

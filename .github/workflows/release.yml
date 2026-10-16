@@ -177,9 +177,12 @@ jobs:
       - name: Manifest (sha256 of every file, GitHub + mirror URLs)
         run: |
           mirror="$(go run ./tools/brandsync -print-update-server 2>/dev/null || true)"
+          mirror_args=()
+          # Only list mirror URLs when a real mirror is configured.
+          if [ -n "$mirror" ] && [ -n "${{ vars.MIRROR_HOST }}" ]; then mirror_args=(-mirror "${mirror%/}/$V"); fi
           go run ./cmd/lanyard-release manifest -version "$V" -dir dist \
             -github "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" \
-            -mirror "${mirror%/}/$V" \
+            "${mirror_args[@]}" \
             -notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
           (cd dist && sha256sum * > SHA256SUMS.txt)
       - name: Sign manifest (minisign / Ed25519)

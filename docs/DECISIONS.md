@@ -124,6 +124,12 @@ the bottom of each section.
 
 ## Packaging
 
+* **v1 ships unsigned.** SignPath Foundation asks for an established project
+  first, and paid options were deferred. The README explains SmartScreen's
+  "Run anyway" and how to check SHA-256 hashes. `docs/RELEASING.md` has the
+  per-release antivirus false-positive checklist and the signing options for
+  later.
+
 * The installer is per-machine (needs admin anyway for the firewall rule) and
   creates an inbound rule for the executable on **all profiles**: many home
   networks are marked "Public" on Windows.
