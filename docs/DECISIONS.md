@@ -75,3 +75,64 @@ the bottom of each section.
   the OS); anything starting with `zh` selects Simplified Chinese.
 * Host approval is off by default (spec), and when on, a pending guest waits up
   to 2 minutes.
+
+## Connectivity details (learned while building the NAT lab)
+
+* **Default STUN list** was checked from a GitHub-hosted runner (US) on
+  2026-10-16 with `cmd/stuncheck` (CI job `stun-check` runs it on every
+  push): `stun.miwifi.com` (RFC 5780), `stun.chat.bilibili.com`,
+  `stun.douyucdn.cn:18000` (RFC 5780), `stun.cdnbye.com`,
+  `stun.cloudflare.com`, `stun.l.google.com:19302`, `stun.nextcloud.com`
+  (RFC 5780) and `stun.freeswitch.org` (RFC 5780) answered.
+  `stun.hitv.com`, `stun.qq.com` and `stun.syncthing.net` did not and were
+  dropped or never added. Reachability *from inside mainland China* could not
+  be verified from CI; it is part of docs/MANUAL_TEST.md.
+* **Port mappings are not cleaned up after losing the race** (except a UPnP
+  rule on a *different* external port). miniupnpd, which most consumer
+  routers run, keeps one rule per port for UPnP, NAT-PMP and PCP, so deleting
+  the "loser" deleted the winner. The lab caught this. Losing NAT-PMP/PCP
+  mappings expire by themselves (2 h).
+* **CGNAT detection** uses, in order: a CGNAT (100.64/10) address on this PC;
+  the router *refusing* a mapping because its own WAN address is private
+  (modern miniupnpd: UPnP error 501, NAT-PMP result 3); a mapped external
+  address that isn't public; the router's external address differing from the
+  STUN-observed one.
+* **A host punch also nudges known paths.** When a valid punch arrives from an
+  address the guest is already dialing, that path retries immediately. Only a
+  *new* address becomes a separate "peer-reflexive" path.
+* **Attempt phase** is the phase in which a try *ended*, so a dial that
+  completes after the host's punches is reported as "reply code".
+* **LANyard's own LAN announcements carry a trailing `[LY]` marker** (after
+  `[/AD]`; Minecraft ignores it). Detectors skip marked packets, so one core
+  never re-hosts another core's relayed world (found when two cores ran on one
+  machine). Same-process ports are also ignored explicitly.
+* **The host keeps serving the chosen world** while it is announced, even if
+  another world opens later. If the world disappears (closed or reopened on a
+  new port), it follows the most recently opened local world.
+* **Guest LAN announcement** is a unicast datagram to `127.0.0.1:4445` plus
+  multicast on the loopback interface, both from `127.0.0.1`. Minecraft's
+  socket is bound to the wildcard address, so the unicast reaches it, and the
+  world is listed as `127.0.0.1:<port>`, reachable only from that PC. We
+  deliberately don't announce on the LAN interface: the tunnel would then be
+  offered to everyone on the guest's network.
+* **Lab realism:** emulated routers drop unsolicited WAN input (like every
+  real router). Without that, Linux conntrack confirms an entry for the peer's
+  early probe, and the PC's later outbound punch gets a different source port
+  (SNAT tuple clash), so hole punching fails in a way real routers don't.
+  "Address-restricted" filtering is emulated per mapping (remote address +
+  port), as RFC 4787 defines it.
+
+## Packaging
+
+* The installer is per-machine (needs admin anyway for the firewall rule) and
+  creates an inbound rule for the executable on **all profiles**: many home
+  networks are marked "Public" on Windows.
+* The installer stops running `LANyard.exe` processes (GUI and background
+  core are the same executable) before replacing files.
+* The firewall check uses PowerShell's NetSecurity module. It reports
+  *blocked* separately because clicking "Cancel" on the Windows prompt creates
+  block rules, which is the most common silent failure.
+* Update manifests are signed by a dedicated release key. `lanyard-release
+  verify` runs in the release workflow against the key **embedded in the app**,
+  so a release can never be published with a signature that installed
+  clients would reject.
