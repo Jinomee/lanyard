@@ -23,6 +23,8 @@
 
   "gui.core_unreachable": "{app}后台服务没有响应：{error}",
   "gui.err.core": "无法连接到{app}后台服务。",
+  "gui.err.old_core": "后台还有一个旧版{app}（{version}）在运行，而且没能自动关闭。请在任务管理器中结束“LANyard.exe”，然后重试。",
+  "gui.err.newer_core": "后台正在运行更新版本的{app}（{version}）。请关闭这个窗口，打开新版本。",
   "gui.err.save": "无法保存 {path}：{error}",
 
   "host.title": "和朋友一起玩你的世界",

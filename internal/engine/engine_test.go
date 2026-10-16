@@ -220,3 +220,51 @@ func TestNewCodeTurnsAwayPendingGuests(t *testing.T) {
 	}
 	t.Fatalf("guest state %+v", guest.State().Join)
 }
+
+// Stopping right after starting must release the UDP port: with a fixed
+// port, the next start would otherwise fail with err.host.udp_port.
+func TestStartStopReleasesSockets(t *testing.T) {
+	e := newTestEngine(t)
+	c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := c.LocalAddr().(*net.UDPAddr).Port
+	_ = c.Close()
+	s := e.Settings()
+	s.UDPPort = port
+	if _, err := e.SetSettings(s); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 20 {
+		if err := e.StartHost(ModeManual, 25565); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(time.Duration(i%5) * time.Millisecond) // stop at different points of startup
+		e.StopHost()
+	}
+	time.Sleep(300 * time.Millisecond) // let the last run() notice the stop
+	if err := e.StartHost(ModeManual, 25565); err != nil {
+		t.Fatal(err)
+	}
+	if st := waitHost(t, e, HostReady); st.UDPPort != port {
+		t.Fatalf("udp port %d, want %d", st.UDPPort, port)
+	}
+}
+
+// After the computer slept, sessions get a fresh grace period instead of
+// counting the sleep as time without a client.
+func TestSleepIsNotAbandonment(t *testing.T) {
+	e := newTestEngine(t)
+	if err := e.StartHost(ModeManual, 25565); err != nil {
+		t.Fatal(err)
+	}
+	waitHost(t, e, HostReady)
+	e.mu.Lock()
+	e.activity = time.Now().Add(-AbandonedAfter(time.Minute) - time.Second)
+	e.lastIdle = time.Now().Add(-2 * time.Hour) // the last check was before the sleep
+	e.mu.Unlock()
+	if e.Idle(time.Minute) {
+		t.Fatal("session ended right after waking up")
+	}
+}

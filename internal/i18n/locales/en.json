@@ -23,6 +23,8 @@
 
   "gui.core_unreachable": "The {app} background service is not responding: {error}",
   "gui.err.core": "The {app} background service could not be reached.",
+  "gui.err.old_core": "An older {app} ({version}) is still running in the background and didn't close. End \"LANyard.exe\" in Task Manager, then try again.",
+  "gui.err.newer_core": "A newer {app} ({version}) is running in the background. Close this window and open the newer version.",
   "gui.err.save": "Couldn't save {path}: {error}",
 
   "host.title": "Play your world with friends",

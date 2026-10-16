@@ -137,14 +137,20 @@ func Ensure(ctx context.Context, dir string, start func() error, timeout time.Du
 	if err == nil {
 		return c, nil
 	}
-	// An old core still holds the lock (the app was updated while it ran):
-	// a new one could never start, so ask the old one to exit first.
+	// Another API version holds the lock, so no core of ours could start.
+	// An older one (left running across an update) is asked to exit. A
+	// newer one is never touched: this client is the outdated part.
 	var ie *IncompatibleError
 	if errors.As(err, &ie) {
+		if ie.APIVersion > engine.APIVersion {
+			return nil, ie
+		}
 		sctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		_ = ie.Client.Do(sctx, "POST", "/v1/shutdown", nil, nil)
 		cancel()
-		waitUnlocked(ctx, dir, 10*time.Second)
+		if !waitUnlocked(ctx, dir, 10*time.Second) {
+			return nil, ie // it didn't exit: say so rather than time out
+		}
 	}
 	if err := start(); err != nil {
 		return nil, fmt.Errorf("start core: %w", err)
@@ -164,13 +170,14 @@ func Ensure(ctx context.Context, dir string, start func() error, timeout time.Du
 }
 
 // waitUnlocked waits until no core holds the lock in dir.
-func waitUnlocked(ctx context.Context, dir string, timeout time.Duration) {
+func waitUnlocked(ctx context.Context, dir string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) && ctx.Err() == nil {
 		if l, err := Claim(dir); err == nil {
 			_ = l.Release()
-			return
+			return true
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	return false
 }

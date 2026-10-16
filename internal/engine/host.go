@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -118,6 +119,7 @@ type hostSession struct {
 	pending      map[string]*pendingJoin
 	punches      []*PunchInfo
 	stats        proxy.Stats
+	rejectLog    logLimiter
 	lastTarget   netip.AddrPort
 	lastMOTD     string
 	targetOK     bool
@@ -222,6 +224,16 @@ func (h *hostSession) run() {
 		ep6, _ = transport.ListenUDP(6, 0)
 	}
 	h.mu.Lock()
+	if h.status == HostStopped {
+		// Stopped while starting: cleanup() has run already and could not
+		// see these sockets, so close them here.
+		h.mu.Unlock()
+		_ = ep4.Close()
+		if ep6 != nil {
+			_ = ep6.Close()
+		}
+		return
+	}
 	h.ep4, h.ep6 = ep4, ep6
 	h.mu.Unlock()
 
@@ -243,8 +255,15 @@ func (h *hostSession) run() {
 		h.e.log.Warn("LAN world detection unavailable", "err", err)
 	} else {
 		h.mu.Lock()
-		h.detector = d
+		stopped := h.status == HostStopped
+		if !stopped {
+			h.detector = d
+		}
 		h.mu.Unlock()
+		if stopped {
+			_ = d.Close()
+			return
+		}
 		h.e.ignoreJoinPorts(d)
 	}
 
@@ -264,6 +283,11 @@ func (h *hostSession) regather() error {
 	s := h.e.settings.Get()
 	h.mu.Lock()
 	old := h.gathered
+	if old != nil && old.Mapping != nil {
+		// Released once: a retrying renewal must not delete the old external
+		// port again (another device may have it by now).
+		h.gathered = &connect.Gathered{Report: old.Report, Candidates: old.Candidates}
+	}
 	ep4, ep6 := h.ep4, h.ep6
 	h.mu.Unlock()
 	if old != nil && old.Mapping != nil {
@@ -274,17 +298,19 @@ func (h *hostSession) regather() error {
 		PortMapOptions: h.e.portmapOptions(), ProbeFiltering: true,
 	})
 	r := &g.Report
+	if h.ctx.Err() != nil {
+		// Stopped mid-check: the report is incomplete (it would read as
+		// "UDP blocked"), so don't log it.
+		if g.Mapping != nil {
+			_ = g.Mapping.Close()
+		}
+		return h.ctx.Err()
+	}
 	h.e.log.Info("host network", "nat", r.NATType, "mapping", r.Mapping, "filtering", r.Filtering,
 		"public", r.PublicV4, "ipv6", r.IPv6, "portmap", r.PortMap, "cgnat", r.CGNAT, "reason", r.CGNATReason,
 		"udpBlocked", r.UDPBlocked, "candidates", g.Candidates, "ms", r.ElapsedMs)
 	for _, x := range append(r.STUN4, r.STUN6...) {
 		h.e.log.Debug("stun", "server", x.Server, "resolved", x.Resolved, "mapped", x.Mapped, "rttMs", x.RTTms, "err", x.Error)
-	}
-	if h.ctx.Err() != nil {
-		if g.Mapping != nil {
-			_ = g.Mapping.Close()
-		}
-		return h.ctx.Err()
 	}
 	if len(g.Candidates) == 0 {
 		if g.Mapping != nil {
@@ -408,7 +434,9 @@ func (h *hostSession) handle(conn *quic.Conn) {
 	remote := conn.RemoteAddr().String()
 	ctl, hello, err := transport.HostAcceptHello(h.ctx, conn, 10*time.Second)
 	if err != nil {
-		h.e.log.Debug("connection without valid hello", "remote", remote, "err", err)
+		if h.rejectLog.allow(h.e.log) {
+			h.e.log.Debug("connection without valid hello", "remote", remote, "err", err)
+		}
 		_ = conn.CloseWithError(transport.CodeProtocol, "")
 		return
 	}
@@ -426,20 +454,20 @@ func (h *hostSession) handle(conn *quic.Conn) {
 	h.mu.Unlock()
 	switch {
 	case hello.V != transport.ProtocolVersion:
-		log.Info("join rejected: protocol version", "v", hello.V)
+		h.rejected(log, "join rejected: protocol version", "v", hello.V)
 		reject(conn, ctl, transport.ReasonVersion, transport.CodeProtocol)
 		return
 	case inv == nil || subtle.ConstantTimeCompare(hello.Secret, inv.Secret[:]) != 1:
-		log.Info("join rejected: wrong or revoked code")
+		h.rejected(log, "join rejected: wrong or revoked code")
 		reject(conn, ctl, transport.ReasonBadSecret, transport.CodeBadSecret)
 		return
 	case joincode.Expired(inv.Expires, time.Now()):
-		log.Info("join rejected: code expired")
+		h.rejected(log, "join rejected: code expired")
 		reject(conn, ctl, transport.ReasonExpired, transport.CodeExpired)
 		return
 	}
 	full := func() {
-		log.Info("join rejected: full")
+		h.rejected(log, "join rejected: full")
 		reject(conn, ctl, transport.ReasonFull, transport.CodeFull)
 	}
 	info := GuestInfo{ID: randomID(), Name: name, Addr: remote, Since: time.Now()}
@@ -532,6 +560,47 @@ func (h *hostSession) handle(conn *quic.Conn) {
 	log.Info("guest left", "reason", errString(err))
 }
 
+// logLimiter caps log lines about unauthenticated connections, which anyone
+// who can reach the port can produce at will: otherwise a flood would rotate
+// the useful part of the log away.
+type logLimiter struct {
+	mu      sync.Mutex
+	start   time.Time
+	n       int
+	dropped int
+}
+
+const (
+	rejectLogBurst  = 20
+	rejectLogWindow = 10 * time.Second
+)
+
+// allow reports whether one more line may be logged now; when a window with
+// dropped lines ends it logs how many were skipped.
+func (l *logLimiter) allow(log *slog.Logger) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	if now.Sub(l.start) > rejectLogWindow {
+		if l.dropped > 0 {
+			log.Info("rejected connections not logged individually", "count", l.dropped, "window", rejectLogWindow)
+		}
+		l.start, l.n, l.dropped = now, 0, 0
+	}
+	if l.n < rejectLogBurst {
+		l.n++
+		return true
+	}
+	l.dropped++
+	return false
+}
+
+func (h *hostSession) rejected(log *slog.Logger, msg string, args ...any) {
+	if h.rejectLog.allow(h.e.log) {
+		log.Info(msg, args...)
+	}
+}
+
 // secretCurrent reports whether secret belongs to the code in force now.
 func (h *hostSession) secretCurrent(secret []byte) bool {
 	h.mu.Lock()
@@ -561,6 +630,11 @@ func (h *hostSession) dial(ctx context.Context) (net.Conn, error) {
 	t := h.target()
 	if !t.IsValid() {
 		return nil, errors.New("no Minecraft world open to LAN")
+	}
+	// Our own guest listener (this computer joining someone and hosting the
+	// same port) would send the connection round in circles.
+	if p := h.e.guestListenPort(); p != 0 && t.Addr().IsLoopback() && t.Port() == p {
+		return nil, errors.New("the target is this computer's own LANyard guest port")
 	}
 	var d net.Dialer
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)

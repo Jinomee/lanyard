@@ -136,12 +136,18 @@ func Dir() (string, error) {
 		}
 		d = filepath.Join(base, brand.Name())
 	}
+	_, statErr := os.Stat(d)
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		return "", err
 	}
-	// It holds the API token and the host's private key. Best effort: some
-	// drives (FAT, network shares) have no permissions to set.
-	_ = sysinfo.RestrictToOwner(d)
+	// It holds the API token and the host's private key, so a folder we
+	// create is made private (on Windows, Unix modes do nothing). A folder
+	// that already existed keeps the permissions its owner chose: replacing
+	// them on a whole tree (LANYARD_HOME=D:\ …) would be far worse. Best
+	// effort: some drives (FAT, network shares) have no permissions to set.
+	if errors.Is(statErr, os.ErrNotExist) {
+		_ = sysinfo.RestrictToOwner(d)
+	}
 	return d, nil
 }
 

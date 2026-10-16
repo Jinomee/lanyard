@@ -332,9 +332,7 @@ func (j *joinSession) connected(jn *connect.Joined) {
 	s := j.e.settings.Get()
 	var ln net.Listener
 	var err error
-	if s.GuestPort != 0 && portAnswers(s.GuestPort) {
-		// Windows lets us bind 127.0.0.1:P even when another program listens
-		// on 0.0.0.0:P, silently taking its local connections. Don't.
+	if s.GuestPort != 0 && portBusy(s.GuestPort) {
 		err = errors.New("another program is listening on the port")
 	} else {
 		ln, err = net.Listen("tcp", net.JoinHostPort("127.0.0.1", itoa(s.GuestPort)))
@@ -365,6 +363,7 @@ func (j *joinSession) connected(jn *connect.Joined) {
 			_ = ann.Close()
 		}
 		_ = jn.Conn.CloseWithError(transport.CodeNormal, "")
+		j.release() // a port mapping gathered after StopJoin's release
 		return
 	}
 	j.listener, j.announcer, j.conn = ln, ann, jn.Conn
@@ -500,6 +499,22 @@ func (h *hostSession) detectorRef() *mclan.Detector {
 	return h.detector
 }
 
+// guestListenPort is the port of the active guest listener (0 if none).
+func (e *Engine) guestListenPort() uint16 {
+	e.mu.Lock()
+	j := e.join
+	e.mu.Unlock()
+	if j == nil {
+		return 0
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.listener == nil {
+		return 0
+	}
+	return uint16(j.listener.Addr().(*net.TCPAddr).Port) //nolint:gosec // TCP port
+}
+
 // ignorePort tells the host's world detector (if hosting) to skip or stop
 // skipping our own guest-side announcement on port.
 func (e *Engine) ignorePort(port uint16, on bool) {
@@ -510,17 +525,6 @@ func (e *Engine) ignorePort(port uint16, on bool) {
 			d.Ignore(port, on)
 		}
 	}
-}
-
-// portAnswers reports whether something accepts TCP connections on
-// 127.0.0.1:port.
-func portAnswers(port int) bool {
-	c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", itoa(port)), 300*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	_ = c.Close()
-	return true
 }
 
 // ignoreJoinPorts excludes an active guest listener from a new detector.

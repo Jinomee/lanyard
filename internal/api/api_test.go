@@ -3,16 +3,21 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jinomee/lanyard/internal/api"
+	"github.com/jinomee/lanyard/internal/brand"
 	"github.com/jinomee/lanyard/internal/engine"
 	"github.com/jinomee/lanyard/internal/mclan"
 	"github.com/jinomee/lanyard/internal/portmap"
@@ -311,5 +316,43 @@ func TestSettingsValidation(t *testing.T) {
 	var ae *api.Error
 	if !errors.As(err, &ae) || ae.Key != "settings.err.manualPort" {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// fakeCore answers /v1/hello with apiVersion and records other requests.
+func fakeCore(t *testing.T, dir string, apiVersion int) *[]string {
+	t.Helper()
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/v1/hello" {
+			_ = json.NewEncoder(w).Encode(api.Hello{Product: brand.Name(), Version: "x", APIVersion: apiVersion})
+		}
+	}))
+	t.Cleanup(srv.Close)
+	if err := api.WriteInfo(dir, api.Info{PID: 1, Addr: strings.TrimPrefix(srv.URL, "http://"), Token: "t", APIVersion: apiVersion}); err != nil {
+		t.Fatal(err)
+	}
+	return &paths
+}
+
+func TestEnsureNeverStopsANewerCore(t *testing.T) {
+	dir := t.TempDir()
+	paths := fakeCore(t, dir, engine.APIVersion+1)
+	started := false
+	_, err := api.Ensure(context.Background(), dir, func() error { started = true; return nil }, time.Second)
+	var ie *api.IncompatibleError
+	if !errors.As(err, &ie) || started || slices.Contains(*paths, "/v1/shutdown") {
+		t.Fatalf("err %v, started %v, requests %v", err, started, *paths)
+	}
+}
+
+func TestEnsureStopsAnOlderCore(t *testing.T) {
+	dir := t.TempDir()
+	paths := fakeCore(t, dir, engine.APIVersion-1)
+	started := false
+	_, _ = api.Ensure(context.Background(), dir, func() error { started = true; return nil }, 200*time.Millisecond)
+	if !slices.Contains(*paths, "/v1/shutdown") || !started {
+		t.Fatalf("started %v, requests %v", started, *paths)
 	}
 }

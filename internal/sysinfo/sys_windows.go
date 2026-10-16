@@ -3,11 +3,13 @@
 package sysinfo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/windows"
 
@@ -55,7 +57,10 @@ func FirewallStatus(exe string) string {
 		`$p -eq 'Any' -or [Environment]::ExpandEnvironmentVariables($p) -ieq $exe });` +
 		`$r=@($r | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' } | Sort-Object -Property Name -Unique);` +
 		`@{allow=@($r|Where-Object {$_.Action -eq 'Allow'}).Count;block=@($r|Where-Object {$_.Action -eq 'Block'}).Count}|ConvertTo-Json -Compress`
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	// A hung PowerShell must not block every later check.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.Env = append(os.Environ(), "LANYARD_FW_EXE="+exe, "LANYARD_FW_NAME="+brand.Name())
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	out, err := cmd.Output()

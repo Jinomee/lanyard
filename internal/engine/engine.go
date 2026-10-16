@@ -82,6 +82,7 @@ type Engine struct {
 	firewall string
 	fwCheck  bool // a firewall check is running
 	activity time.Time
+	lastIdle time.Time // previous Idle call, to notice the computer sleeping
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -139,8 +140,8 @@ func fmtFP(fp [12]byte) string {
 }
 
 // checkFirewall refreshes the Windows firewall status. It runs at start,
-// whenever hosting starts, and every minute while the status is not "allowed",
-// so the banner follows what the user does in Windows.
+// whenever hosting starts, and every minute while hosting and the status is
+// not "allowed", so the banner follows what the user does in Windows.
 func (e *Engine) checkFirewall() {
 	if runtime.GOOS != "windows" || e.opt.Exe == "" {
 		return
@@ -175,8 +176,9 @@ func (e *Engine) firewallLoop() {
 			}
 			e.mu.Lock()
 			ok := e.firewall == sysinfo.FirewallAllowed
+			hosting := e.host != nil && e.host.active()
 			e.mu.Unlock()
-			if !ok {
+			if !ok && hosting { // the status only matters while hosting
 				break
 			}
 		}
@@ -219,7 +221,15 @@ func (e *Engine) Touch() {
 func (e *Engine) Idle(d time.Duration) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	quiet := time.Since(e.activity)
+	now := time.Now()
+	// Idle is polled every few seconds. A long gap means the computer slept
+	// (Windows' monotonic clock includes sleep): start counting afresh so the
+	// GUI's heartbeat has time to arrive before sessions count as abandoned.
+	if !e.lastIdle.IsZero() && now.Sub(e.lastIdle) > time.Minute {
+		e.activity = now
+	}
+	e.lastIdle = now
+	quiet := now.Sub(e.activity)
 	if (e.host != nil && e.host.active()) || (e.join != nil && e.join.active()) {
 		return quiet > AbandonedAfter(d)
 	}

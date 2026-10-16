@@ -143,9 +143,15 @@ func (a *App) core(ctx context.Context) (*api.Client, error) {
 // uiError is what the frontend receives for a failed call: JSON it can parse.
 func uiError(err error) error {
 	var ae *api.Error
+	var ie *api.IncompatibleError
 	ue := engine.UserError{Key: "gui.err.core", Detail: err.Error()}
-	if errors.As(err, &ae) {
+	switch {
+	case errors.As(err, &ae):
 		ue = ae.UserError
+	case errors.As(err, &ie) && ie.APIVersion > engine.APIVersion:
+		ue = engine.UserError{Key: "gui.err.newer_core", Params: map[string]string{"version": ie.Version}}
+	case errors.As(err, &ie):
+		ue = engine.UserError{Key: "gui.err.old_core", Params: map[string]string{"version": ie.Version}}
 	}
 	b, _ := json.Marshal(ue)
 	return errors.New(string(b))

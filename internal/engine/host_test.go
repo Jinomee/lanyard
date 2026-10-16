@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"log/slog"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,5 +41,24 @@ func TestPickWorldSticky(t *testing.T) {
 	}
 	if w, _ := pickWorld(ws, older.Target()); w.Port != older.Port {
 		t.Fatalf("sticky pick = %d, want the world friends are in", w.Port)
+	}
+}
+
+func TestRejectLogIsBounded(t *testing.T) {
+	var buf strings.Builder
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	var l logLimiter
+	n := 0
+	for range 1000 {
+		if l.allow(log) {
+			n++
+		}
+	}
+	if n != rejectLogBurst {
+		t.Fatalf("%d lines allowed in one window, want %d", n, rejectLogBurst)
+	}
+	l.start = time.Now().Add(-rejectLogWindow - time.Second) // the window ends
+	if !l.allow(log) || !strings.Contains(buf.String(), "count=980") {
+		t.Fatalf("summary not logged: %q", buf.String())
 	}
 }
