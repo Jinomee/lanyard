@@ -144,12 +144,19 @@ func NewLab(t *testing.T, bin, help string, host, guest Site) *Lab {
 	return l
 }
 
+// vethPair creates a veth pair with each end born directly inside its
+// namespace. Creating it in the root namespace and moving it lets udev
+// (MACAddressPolicy=persistent on Ubuntu) rewrite MAC addresses
+// asynchronously after neighbours cached them, which breaks L2 at random.
+func vethPair(t *testing.T, a, nsA, b, nsB string) {
+	t.Helper()
+	run(t, "ip", "link", "add", a, "netns", nsA, "type", "veth", "peer", "name", b, "netns", nsB)
+}
+
 // attach creates a veth pair: name (moved into ns) ↔ peer attached to br0.
 func (l *Lab) attachToInternet(ns, ifname, peer string) {
 	t := l.t
-	run(t, "ip", "link", "add", peer, "type", "veth", "peer", "name", ifname)
-	run(t, "ip", "link", "set", ifname, "netns", ns)
-	run(t, "ip", "link", "set", peer, "netns", inetNS)
+	vethPair(t, ifname, ns, peer, inetNS)
 	ipns(t, inetNS, "link", "set", peer, "master", "br0")
 	ipns(t, inetNS, "link", "set", peer, "up")
 }
@@ -171,9 +178,7 @@ func (l *Lab) site(key string, s Site) {
 		l.attachToInternet(a.carrier, "wan", key+"c-br")
 		ipns(t, a.carrier, "addr", "add", a.carrierWAN4+"/24", "dev", "wan")
 		ipns(t, a.carrier, "link", "set", "wan", "up")
-		run(t, "ip", "link", "add", key+"c-lan", "type", "veth", "peer", "name", key+"r-wan")
-		run(t, "ip", "link", "set", key+"c-lan", "netns", a.carrier)
-		run(t, "ip", "link", "set", key+"r-wan", "netns", a.router)
+		vethPair(t, key+"c-lan", a.carrier, key+"r-wan", a.router)
 		ipns(t, a.carrier, "link", "set", key+"c-lan", "name", "lan")
 		ipns(t, a.router, "link", "set", key+"r-wan", "name", "wan")
 		ipns(t, a.carrier, "addr", "add", "100.64.0.1/24", "dev", "lan")
@@ -192,9 +197,7 @@ func (l *Lab) site(key string, s Site) {
 	}
 
 	// LAN between router and PC.
-	run(t, "ip", "link", "add", key+"-lan", "type", "veth", "peer", "name", key+"-eth")
-	run(t, "ip", "link", "set", key+"-lan", "netns", a.router)
-	run(t, "ip", "link", "set", key+"-eth", "netns", a.ns)
+	vethPair(t, key+"-lan", a.router, key+"-eth", a.ns)
 	ipns(t, a.router, "link", "set", key+"-lan", "name", "lan")
 	ipns(t, a.ns, "link", "set", key+"-eth", "name", "eth0")
 	ipns(t, a.router, "addr", "add", a.lan4+"/24", "dev", "lan")
