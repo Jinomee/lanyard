@@ -2,10 +2,12 @@
 /bin/
 gui/build/bin/
 gui/frontend/node_modules/
-gui/frontend/dist/
+gui/frontend/dist/*
+!gui/frontend/dist/.gitkeep
 gui/frontend/wailsjs/
 *.exe
 *.test
 *.out
 coverage.*
 /test/natlab/work/
+gui/frontend/package.json.md5

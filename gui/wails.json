@@ -1,0 +1,25 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "author": {
+    "name": "LANyard contributors"
+  },
+  "frontend:build": "npm run build",
+  "frontend:dev:serverUrl": "auto",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:install": "npm ci",
+  "info": {
+    "comments": "LANyard (后院联机)",
+    "companyName": "LANyard contributors",
+    "copyright": "GPL-3.0-or-later — LANyard contributors",
+    "productName": "LANyard",
+    "protocols": [
+      {
+        "description": "LANyard join link",
+        "role": "Viewer",
+        "scheme": "lanyard"
+      }
+    ]
+  },
+  "name": "LANyard",
+  "outputfilename": "LANyard"
+}
