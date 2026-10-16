@@ -166,7 +166,9 @@ function attemptsCard(j: JoinState) {
   if (!as.length) return null;
   return h(
     "details",
-    { class: "card", open: j.status === "failed" ? true : undefined },
+    // Keyed by status group: open by default after a failure, and otherwise
+    // left the way the user put it across refreshes.
+    { class: "card", "data-key": "attempts-" + (j.status === "failed" ? "failed" : "live"), open: j.status === "failed" ? true : undefined },
     h("summary", null, t("join.attempts_title", { n: as.length })),
     h(
       "table",

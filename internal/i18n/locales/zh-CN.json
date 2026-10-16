@@ -23,6 +23,7 @@
 
   "gui.core_unreachable": "{app}后台服务没有响应：{error}",
   "gui.err.core": "无法连接到{app}后台服务。",
+  "gui.err.save": "文件无法保存。",
 
   "host.title": "和朋友一起玩你的世界",
   "host.intro": "朋友们可以通过互联网加入你的 Minecraft 世界。不需要租服务器，也不需要设置路由器。",
@@ -128,6 +129,7 @@
   "clipboard.join": "加入",
   "clipboard.reply": "剪贴板里有朋友发来的回执码。",
   "clipboard.use_reply": "使用",
+  "link.confirm_switch": "打开了一个加入链接。要加入那个世界吗？当前的世界会断开。",
 
   "update.available": "{app} {version} 已发布。",
   "update.download": "下载",

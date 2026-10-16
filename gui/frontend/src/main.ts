@@ -2,7 +2,7 @@ import "./style.css";
 import { h, mount, $ } from "./dom";
 import { loadLanguage, t, currentLanguage } from "./i18n";
 import { call, errText, ParsedCode, Settings, State } from "./api";
-import { hostView, renderHost, submitReply } from "./host";
+import { hostView, renderHost, submitReply, loadDefaultPort } from "./host";
 import { joinView, renderJoin, join, joinCodeInUse } from "./join";
 import { diagView, renderDiag } from "./diag";
 import { settingsView, renderSettings } from "./settings";
@@ -18,7 +18,12 @@ let tab: Tab = "host";
 let state: State | null = null;
 let coreError = "";
 let clipboardOffer: ParsedCode | null = null;
+let linkOffer = ""; // a join link that arrived while already in a world
 const dismissed = new Set<string>();
+const ownCodes = new Set<string>(); // every code this computer has hosted with
+let lastRendered = "";
+let lastRenderAt = 0;
+let pointerDown = false;
 let languageSetting = "";
 let views: Record<Tab, HTMLElement>;
 
@@ -66,6 +71,7 @@ function select(k: Tab) {
   for (const [name, el] of Object.entries(views)) el.hidden = name !== k;
   document.querySelectorAll<HTMLElement>("nav .tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === k));
   if (state) renderers[k](state);
+  if (k === "host") void loadDefaultPort();
   renderBanners();
 }
 
@@ -94,6 +100,17 @@ function renderBanners() {
   if (!el) return;
   const items: HTMLElement[] = [];
   if (coreError) items.push(banner("error", t("gui.core_unreachable", { error: coreError })));
+  if (linkOffer) {
+    const code = linkOffer;
+    items.push(
+      banner(
+        "info",
+        t("link.confirm_switch"),
+        h("button", { class: "primary", onclick: () => { linkOffer = ""; select("join"); void join(code); } }, t("clipboard.join")),
+        h("button", { class: "subtle", onclick: () => { linkOffer = ""; renderBanners(); } }, t("common.dismiss")),
+      ),
+    );
+  }
   if (clipboardOffer) {
     const offer = clipboardOffer;
     const dismiss = h("button", { class: "subtle", onclick: () => { dismissed.add(offer.code); clipboardOffer = null; renderBanners(); } }, t("common.dismiss"));
@@ -125,15 +142,54 @@ function renderBanners() {
   mount(el, items);
 }
 
+/** True while re-rendering would get in the user's way. */
+function interacting(): boolean {
+  if (pointerDown) return true; // a click in progress would be lost
+  const sel = window.getSelection();
+  const main = document.querySelector("main");
+  return !!sel && !sel.isCollapsed && !!main && !!sel.anchorNode && main.contains(sel.anchorNode); // selecting a code
+}
+
+/** A world we're joining or in: the code, normalised by the core. */
+function activeJoinCode(): string {
+  const j = state?.join;
+  return j && !["stopped", "failed", "disconnected"].includes(j.status) ? j.code : "";
+}
+
+function forgetStaleOffers() {
+  if (state?.host?.code) ownCodes.add(state.host.code);
+  const code = clipboardOffer?.code;
+  if (code && (ownCodes.has(code) || code === activeJoinCode() || joinCodeInUse() === code)) {
+    dismissed.add(code);
+    clipboardOffer = null;
+  }
+  if (linkOffer && linkOffer === activeJoinCode()) linkOffer = "";
+}
+
 async function poll() {
   try {
     state = await call<State>("GET", "/v1/state");
     coreError = "";
-    renderers[tab](state);
+    forgetStaleOffers();
+    // Rebuild only when something changed (or every 15 s for the "for 3 min"
+    // timers), and never in the middle of a click or a text selection.
+    const json = JSON.stringify(state);
+    const due = json !== lastRendered || Date.now() - lastRenderAt > 15000;
+    if (due && !interacting()) {
+      renderers[tab](state);
+      lastRendered = json;
+      lastRenderAt = Date.now();
+    }
   } catch (e) {
     coreError = errText(e);
   }
   renderBanners();
+}
+
+/** Poll once a second; the next poll starts only after this one finished. */
+async function pollLoop() {
+  await poll();
+  window.setTimeout(() => void pollLoop(), 1000);
 }
 
 async function checkClipboard() {
@@ -143,8 +199,8 @@ async function checkClipboard() {
     const p = await call<ParsedCode>("POST", "/v1/code/parse", { text });
     if (p.expired || dismissed.has(p.code)) return;
     if (p.kind === "invite") {
-      // Don't offer our own code or the world we're already in.
-      if (state?.host?.code === p.code || joinCodeInUse() === p.code) return;
+      // Don't offer our own codes (old ones too) or the world we're already in.
+      if (ownCodes.has(p.code) || state?.host?.code === p.code || activeJoinCode() === p.code || joinCodeInUse() === p.code) return;
     } else if (!state?.host || state.host.status === "stopped") {
       return;
     }
@@ -158,6 +214,15 @@ async function checkClipboard() {
 async function handleLink(code: string) {
   if (!code) return;
   select("join");
+  const current = activeJoinCode();
+  if (current) {
+    // Already joining or playing somewhere: never drop that silently.
+    if (current !== code) {
+      linkOffer = code;
+      renderBanners();
+    }
+    return;
+  }
   await join(code);
 }
 
@@ -171,8 +236,10 @@ async function main() {
   }
   await loadLanguage(languageSetting);
   build();
-  await poll();
-  window.setInterval(poll, 1000);
+  window.addEventListener("pointerdown", () => (pointerDown = true), true);
+  window.addEventListener("pointerup", () => window.setTimeout(() => (pointerDown = false), 0), true);
+  window.addEventListener("pointercancel", () => (pointerDown = false), true);
+  await pollLoop();
   window.addEventListener("focus", () => void checkClipboard());
   void checkClipboard();
   EventsOn("link", (code: string) => void handleLink(code));

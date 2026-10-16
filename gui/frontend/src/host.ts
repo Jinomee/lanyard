@@ -1,6 +1,6 @@
 import { h, mount, toast } from "./dom";
 import { t, fmtTime, fmtBytes, fmtDuration } from "./i18n";
-import { call, errText, adviceText, HostState, State } from "./api";
+import { call, errText, adviceText, HostState, Settings, State } from "./api";
 import { CopyText } from "../wailsjs/go/main/App";
 import { maybeShowFirewallGuide } from "./firewall";
 
@@ -15,11 +15,21 @@ let portInput: HTMLInputElement;
 let modeAuto: HTMLInputElement;
 let modeManual: HTMLInputElement;
 let lastState: State | null = null;
+let portEdited = false;
 
 export function hostView(): HTMLElement {
   modeAuto = h("input", { type: "radio", name: "mode", value: "auto", checked: true }) as HTMLInputElement;
   modeManual = h("input", { type: "radio", name: "mode", value: "manual" }) as HTMLInputElement;
-  portInput = h("input", { type: "number", min: 1, max: 65535, value: 25565, class: "port", "aria-label": t("host.manual_port") }) as HTMLInputElement;
+  portInput = h("input", {
+    type: "number",
+    min: 1,
+    max: 65535,
+    value: 25565,
+    class: "port",
+    "aria-label": t("host.manual_port"),
+    oninput: () => (portEdited = true),
+  }) as HTMLInputElement;
+  void loadDefaultPort();
   msg = h("p", { class: "error", role: "alert" });
 
   idle = h(
@@ -70,6 +80,17 @@ export function hostView(): HTMLElement {
   );
   root = h("div", { class: "view" }, idle, active);
   return root;
+}
+
+/** Fill in the "default server port" setting unless the user typed a port. */
+export async function loadDefaultPort() {
+  if (portEdited) return;
+  try {
+    const s = await call<Settings>("GET", "/v1/settings");
+    if (!portEdited && s.manualPort) portInput.value = String(s.manualPort);
+  } catch {
+    /* keep the current value */
+  }
 }
 
 async function start() {
@@ -140,7 +161,12 @@ function statusCard(s: HostState) {
     h("div", { class: "row spread" }, h("h2", null, t("host.hosting")), h("span", { class: "pill" }, t("host.since", { d: fmtDuration(s.since) }))),
     world,
     s.status === "starting" || s.status === "refreshing"
-      ? h("p", { class: "muted" }, "⏳ ", t("host.checking_network"))
+      ? [
+          h("p", { class: "muted" }, "⏳ ", t("host.checking_network")),
+          // A renewal that keeps failing (network down): friends already
+          // playing stay connected while it retries.
+          s.error ? h("p", { class: "warn" }, "⚠ ", t(s.error.key)) : null,
+        ]
       : outlook
         ? h(
             "div",

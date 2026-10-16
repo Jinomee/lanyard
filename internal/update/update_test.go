@@ -156,3 +156,60 @@ func TestNewer(t *testing.T) {
 		}
 	}
 }
+
+// signedSource serves a manifest for version, signed with sk.
+func signedSource(t *testing.T, sk minisign.PrivateKey, version string, urls ...string) *httptest.Server {
+	t.Helper()
+	q := func(s string) string { return `"` + s + `"` }
+	body := []byte(`{"product":"LANyard","version":` + q(version) + `,"files":[{"name":"x","os":` + q(runtime.GOOS) +
+		`,"arch":` + q(runtime.GOARCH) + `,"kind":"portable","size":1,"sha256":"00","urls":[` + q(strings.Join(urls, `","`)) + `]}]}`)
+	sig := minisign.Sign(sk, body)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".minisig") {
+			_, _ = w.Write(sig)
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestCheckerSourcePolicies(t *testing.T) {
+	pk, sk, err := minisign.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(current string, srvs ...*httptest.Server) Result {
+		c := &Checker{Key: pk, Current: current}
+		for i, s := range srvs {
+			c.Sources = append(c.Sources, Source{[]string{"github", "mirror"}[i], s.URL + "/manifest.json", time.Second})
+		}
+		return c.Check(context.Background())
+	}
+	const ghURL, mirrorURL = "https://github.com/x/releases/download/v3.0.0/x", "https://updates.example/x/3.0.0/x"
+
+	// An old (validly signed) manifest on one source must not hide a newer one.
+	old := signedSource(t, sk, "1.0.0", ghURL)
+	mirror := signedSource(t, sk, "3.0.0", ghURL, strings.Replace(mirrorURL, "updates.example", "127.0.0.1", 1))
+	res := check("2.0.0", old, mirror)
+	if !res.Available || res.Latest != "3.0.0" || res.Source != "mirror" {
+		t.Fatalf("stale first source: %+v", res)
+	}
+	// The mirror answered, so its download comes first.
+	if !strings.Contains(res.Download.URLs[0], "127.0.0.1") {
+		t.Fatalf("download URLs %v: mirror should come first", res.Download.URLs)
+	}
+	// Only stale answers: not available, no error.
+	if res := check("2.0.0", old); res.Available || res.Error != "" || res.Latest != "1.0.0" {
+		t.Fatalf("only stale: %+v", res)
+	}
+	// Pre-releases are offered only to pre-release users.
+	rc := signedSource(t, sk, "3.0.0-rc.1", ghURL)
+	if res := check("2.0.0", rc); res.Available {
+		t.Fatalf("stable user offered a pre-release: %+v", res)
+	}
+	if res := check("2.0.0-rc.2", rc); !res.Available {
+		t.Fatalf("pre-release user not offered the next pre-release: %+v", res)
+	}
+}

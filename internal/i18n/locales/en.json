@@ -23,6 +23,7 @@
 
   "gui.core_unreachable": "The {app} background service is not responding: {error}",
   "gui.err.core": "The {app} background service could not be reached.",
+  "gui.err.save": "The file could not be saved.",
 
   "host.title": "Play your world with friends",
   "host.intro": "Your friends join your Minecraft world over the internet. Nothing to install on a server, nothing to configure on your router.",
@@ -128,6 +129,7 @@
   "clipboard.join": "Join",
   "clipboard.reply": "A reply code from a friend is on your clipboard.",
   "clipboard.use_reply": "Use it",
+  "link.confirm_switch": "A join link was opened. Join that world? You will leave the one you're in.",
 
   "update.available": "{app} {version} is available.",
   "update.download": "Download",

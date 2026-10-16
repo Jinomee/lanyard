@@ -156,19 +156,25 @@ export class ApiError extends Error {
   }
 }
 
+/** Turn an error from a Go binding (JSON-encoded UserError) into an ApiError. */
+export function toApiError(e: unknown): ApiError {
+  if (e instanceof ApiError) return e;
+  let ue: UserError = { key: "gui.err.core", detail: String(e) };
+  try {
+    const parsed = JSON.parse(String(e));
+    if (parsed && typeof parsed.key === "string") ue = parsed;
+  } catch {
+    /* not JSON */
+  }
+  return new ApiError(ue);
+}
+
 /** Call the core's control API (via the Go side). Errors become ApiError. */
 export async function call<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
   try {
     return (await Call(method, path, body ?? null)) as T;
   } catch (e) {
-    let ue: UserError = { key: "gui.err.core", detail: String(e) };
-    try {
-      const parsed = JSON.parse(String(e));
-      if (parsed && typeof parsed.key === "string") ue = parsed;
-    } catch {
-      /* not JSON */
-    }
-    throw new ApiError(ue);
+    throw toApiError(e);
   }
 }
 

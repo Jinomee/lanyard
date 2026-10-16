@@ -1,6 +1,6 @@
 import { h, mount, toast } from "./dom";
 import { t, fmtTime } from "./i18n";
-import { call, errText, adviceText, Report, State } from "./api";
+import { call, errText, adviceText, toApiError, Report, State } from "./api";
 import { ExportLogs } from "../wailsjs/go/main/App";
 import { showFirewallGuide } from "./firewall";
 
@@ -47,7 +47,7 @@ async function exportLogs() {
     const path = await ExportLogs(t("diag.export"));
     if (path) toast(t("diag.exported", { path }));
   } catch (e) {
-    toast(errText(e));
+    toast(errText(toApiError(e)));
   }
 }
 
@@ -94,7 +94,7 @@ function stunTable(r: Report) {
   const all = [...(r.stun4 ?? []).map((x) => ({ ...x, fam: "IPv4" })), ...(r.stun6 ?? []).map((x) => ({ ...x, fam: "IPv6" }))];
   return h(
     "details",
-    null,
+    { "data-key": "stun" },
     h("summary", null, t("diag.stun_servers", { ok: all.filter((x) => !x.error).length, n: all.length })),
     h(
       "table",

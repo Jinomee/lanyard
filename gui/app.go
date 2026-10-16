@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -252,7 +253,8 @@ func (a *App) ExportLogs(title string) (string, error) {
 		return "", uiError(err)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return "", uiError(err)
+		b, _ := json.Marshal(engine.UserError{Key: "gui.err.save", Detail: err.Error()})
+		return "", errors.New(string(b))
 	}
 	return path, nil
 }
@@ -291,9 +293,15 @@ func (a *App) beforeClose(ctx context.Context) bool {
 	if !busy {
 		return false
 	}
+	// Enter must not disconnect everyone. Windows shows its own Yes/No
+	// buttons and only understands "No" as the default.
+	defBtn := texts.Cancel
+	if goruntime.GOOS == "windows" {
+		defBtn = "No"
+	}
 	res, err := runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
 		Type: runtime.QuestionDialog, Title: texts.Title, Message: texts.Message,
-		Buttons: []string{texts.Quit, texts.Cancel}, DefaultButton: texts.Cancel, CancelButton: texts.Cancel,
+		Buttons: []string{texts.Quit, texts.Cancel}, DefaultButton: defBtn, CancelButton: texts.Cancel,
 	})
 	if err != nil {
 		return false

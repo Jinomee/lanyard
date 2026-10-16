@@ -40,10 +40,19 @@ function append(el: Node, children: Child[]) {
   }
 }
 
-/** Replace all children of el. */
+/**
+ * Replace all children of el. <details data-key="…"> elements keep the
+ * open/closed state the user gave them across re-renders.
+ */
 export function mount(el: Element, ...children: Child[]) {
+  const was = new Map<string, boolean>();
+  el.querySelectorAll<HTMLDetailsElement>("details[data-key]").forEach((d) => was.set(d.dataset.key!, d.open));
   el.replaceChildren();
   append(el, children);
+  el.querySelectorAll<HTMLDetailsElement>("details[data-key]").forEach((d) => {
+    const open = was.get(d.dataset.key!);
+    if (open !== undefined) d.open = open;
+  });
 }
 
 export function $(id: string): HTMLElement {

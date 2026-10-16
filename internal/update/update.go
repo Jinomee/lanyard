@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -166,6 +167,7 @@ func (c *Checker) Check(ctx context.Context) Result {
 		c.Client = &http.Client{}
 	}
 	lastErr := ErrUnreachable
+	var stale *Result
 	for _, s := range c.Sources {
 		sctx, cancel := context.WithTimeout(ctx, s.Timeout)
 		m, err := c.fromSource(sctx, s)
@@ -177,20 +179,67 @@ func (c *Checker) Check(ctx context.Context) Result {
 			}
 			continue
 		}
-		res.Attempts = append(res.Attempts, s.Name+": ok")
-		res.Source, res.Latest, res.NotesURL = s.Name, m.Version, m.NotesURL
-		res.Notes = m.Notes[c.Lang]
-		if res.Notes == "" {
-			res.Notes = m.Notes["en"]
+		r := res
+		r.Attempts = append([]string(nil), res.Attempts...)
+		r.Source, r.Latest, r.NotesURL = s.Name, m.Version, m.NotesURL
+		r.Notes = m.Notes[c.Lang]
+		if r.Notes == "" {
+			r.Notes = m.Notes["en"]
 		}
-		res.Available = Newer(m.Version, c.Current)
-		if res.Available {
-			res.Download = pick(m.Files, c.Installed)
+		// Pre-releases are only offered to people already running one.
+		r.Available = Newer(m.Version, c.Current) && (!isPrerelease(m.Version) || isPrerelease(c.Current))
+		if r.Available {
+			r.Download = preferSource(pick(m.Files, c.Installed), s.URL)
 		}
-		return res
+		// A validly signed but older manifest (an outdated mirror, or one
+		// replaying an old release) must not hide a newer one elsewhere.
+		if Newer(c.Current, m.Version) {
+			res.Attempts = append(res.Attempts, s.Name+": older than this version ("+m.Version+")")
+			if stale == nil {
+				r.Attempts = res.Attempts
+				stale = &r
+			}
+			continue
+		}
+		r.Attempts = append(r.Attempts, s.Name+": ok")
+		return r
+	}
+	if stale != nil {
+		stale.Attempts = res.Attempts
+		return *stale
 	}
 	res.Error = lastErr.Error()
 	return res
+}
+
+func isPrerelease(v string) bool {
+	_, _, pre := strings.Cut(strings.TrimPrefix(strings.TrimSpace(v), "v"), "-")
+	return pre
+}
+
+// preferSource puts the download URLs on the same server as the manifest
+// that answered first: a player who reached only the mirror can probably not
+// download from GitHub either.
+func preferSource(f *File, manifestURL string) *File {
+	if f == nil {
+		return nil
+	}
+	mu, err := url.Parse(manifestURL)
+	if err != nil {
+		return f
+	}
+	out := *f
+	out.URLs = nil
+	var rest []string
+	for _, u := range f.URLs {
+		if pu, err := url.Parse(u); err == nil && pu.Hostname() == mu.Hostname() {
+			out.URLs = append(out.URLs, u)
+		} else {
+			rest = append(rest, u)
+		}
+	}
+	out.URLs = append(out.URLs, rest...)
+	return &out
 }
 
 func (c *Checker) fromSource(ctx context.Context, s Source) (*Manifest, error) {
