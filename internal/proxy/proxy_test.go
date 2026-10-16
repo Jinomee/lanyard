@@ -224,3 +224,35 @@ func TestMinecraftDownResetsStream(t *testing.T) {
 	}
 	<-done
 }
+
+// A server that sends a message and then resets the connection (as a game
+// server kicking someone may): the message must still reach the guest.
+func TestBytesBeforeResetArrive(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = c.Write([]byte("you were kicked"))
+		time.Sleep(50 * time.Millisecond)
+		_ = c.(*net.TCPConn).SetLinger(0) // RST instead of FIN
+		_ = c.Close()
+	}()
+	h := startHost(t, ln.Addr().String())
+	conn, _, err := dialGuest(t, h, h.id.Fingerprint(), h.secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := net.Pipe()
+	go proxy.OpenGuest(context.Background(), conn, b, nil)
+	_ = a.SetDeadline(time.Now().Add(5 * time.Second))
+	got, _ := io.ReadAll(a)
+	if string(got) != "you were kicked" {
+		t.Fatalf("got %q", got)
+	}
+}

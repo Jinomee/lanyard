@@ -8,7 +8,6 @@ package proxy
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"sync"
@@ -27,18 +26,26 @@ type Stats struct {
 }
 
 type countWriter struct {
-	w io.Writer
-	n *atomic.Int64
+	w   io.Writer
+	n   *atomic.Int64
+	err error // the write error, if the copy stopped because writing failed
 }
 
-func (c countWriter) Write(p []byte) (int, error) {
+func (c *countWriter) Write(p []byte) (int, error) {
 	n, err := c.w.Write(p)
 	c.n.Add(int64(n))
+	if err != nil {
+		c.err = err
+	}
 	return n, err
 }
 
 // Pipe copies in both directions until both sides are finished, propagating
-// half-closes (FIN) and turning errors into resets. It closes both ends.
+// half-closes (FIN). It closes both ends.
+//
+// A failure to *read* one side only ends that direction, gracefully, so bytes
+// already sent the other way (a kick message, say) still arrive. A failure to
+// *write* means the receiving side is gone, and resets everything.
 func Pipe(tcp net.Conn, s *quic.Stream, st *Stats) {
 	if st == nil {
 		st = &Stats{}
@@ -55,17 +62,19 @@ func Pipe(tcp net.Conn, s *quic.Stream, st *Stats) {
 	wg.Add(2)
 	go func() { // TCP → stream
 		defer wg.Done()
-		_, err := io.Copy(countWriter{s, &st.Up}, tcp)
-		if err != nil && !errors.Is(err, net.ErrClosed) {
+		w := &countWriter{w: s, n: &st.Up}
+		_, _ = io.Copy(w, tcp)
+		if w.err != nil {
 			abort()
 			return
 		}
-		_ = s.Close() // FIN on the stream's send side
+		_ = s.Close() // FIN on the stream's send side; buffered data is still delivered
 	}()
 	go func() { // stream → TCP
 		defer wg.Done()
-		_, err := io.Copy(countWriter{tcp, &st.Down}, s)
-		if err != nil {
+		w := &countWriter{w: tcp, n: &st.Down}
+		_, _ = io.Copy(w, s)
+		if w.err != nil {
 			abort()
 			return
 		}

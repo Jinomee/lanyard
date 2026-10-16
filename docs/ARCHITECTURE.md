@@ -28,17 +28,27 @@ by the original specification are recorded in [DECISIONS.md](DECISIONS.md).
 * **Discovery / single instance** — the core takes an exclusive OS file lock
   on `<config>/core.lock` (flock / LockFileEx). Holding the lock means "I am
   the core". It then writes `<config>/core.json` (`0600`) with
-  `{pid, apiAddr, token, version, apiVersion}`. A client:
+  `{pid, addr, token, version, apiVersion}` (`addr` is the API's
+  `127.0.0.1:port`). A client:
   1. reads `core.json`, calls `GET /v1/hello` with the token;
   2. if that answers with a compatible `apiVersion`, reuses that core;
-  3. otherwise starts a core and polls `core.json` until it answers.
+  3. if a core answers with another `apiVersion` (left running across an
+     update), asks it to shut down (`POST /v1/shutdown`) and waits for the
+     lock to be free;
+  4. starts a core and polls `core.json` until it answers.
   A second core started by a race fails to take the lock and exits with a
   distinctive code, so two clients starting at once still end up sharing one
-  core. The core exits by itself after 60 s with no API traffic and no active
-  session, so a crashed GUI never leaves it running forever.
+  core. The GUI starts its core with `-idle 60s`: it exits after 60 s with no
+  API traffic and no active session. Sessions keep it running while clients
+  are around; the GUI sends a heartbeat every 20 s, and sessions that no
+  client has touched for 10 minutes (the GUI crashed) are ended too, so a
+  crashed GUI never leaves the core running forever. The standalone
+  `lanyard-core` never exits on its own unless started with `-idle`.
 * **Control API security** — listens on `127.0.0.1` only, on a random port.
   Every request needs `Authorization: Bearer <token>`; the token is 256 random
-  bits regenerated each start and only readable by the user. Requests whose
+  bits regenerated each start and only readable by the user (the config
+  directory is mode `0700`; on Windows its permissions are replaced with the
+  current user and SYSTEM only, since Unix modes mean nothing there). Requests whose
   `Host` header is not a loopback address are rejected (DNS-rebinding guard),
   and no CORS headers are ever sent.
 

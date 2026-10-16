@@ -95,6 +95,7 @@ type pendingJoin struct {
 
 type hostSession struct {
 	e      *Engine
+	id     *transport.Identity // fixed for the session: certificate and codes always match
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -147,12 +148,13 @@ func (e *Engine) StartHost(mode string, manualPort int) error {
 		return userErr(http.StatusConflict, "err.host.already")
 	}
 	ctx, cancel := context.WithCancel(e.ctx)
-	h := &hostSession{e: e, ctx: ctx, cancel: cancel, status: HostStarting, mode: mode, manualPort: manualPort,
+	h := &hostSession{e: e, id: e.id, ctx: ctx, cancel: cancel, status: HostStarting, mode: mode, manualPort: manualPort,
 		guests: map[string]*guestConn{}, pending: map[string]*pendingJoin{}, since: time.Now()}
 	e.host = h
 	e.mu.Unlock()
 	e.log.Info("hosting started", "mode", mode, "manualPort", manualPort)
 	go h.run()
+	go e.checkFirewall()
 	return nil
 }
 
@@ -189,6 +191,10 @@ func (e *Engine) currentHost() *hostSession {
 
 func (h *hostSession) fail(key string, err error) {
 	h.mu.Lock()
+	if h.status == HostStopped {
+		h.mu.Unlock() // stopped by the user while starting: not an error
+		return
+	}
 	h.status = HostError
 	h.err = &UserError{Key: key}
 	if err != nil {
@@ -215,9 +221,7 @@ func (h *hostSession) run() {
 	h.ep4, h.ep6 = ep4, ep6
 	h.mu.Unlock()
 
-	h.e.mu.Lock()
-	id := h.e.id
-	h.e.mu.Unlock()
+	id := h.id
 	for _, ep := range []*transport.Endpoint{ep4, ep6} {
 		if ep == nil {
 			continue
@@ -241,7 +245,9 @@ func (h *hostSession) run() {
 	}
 
 	if err := h.regather(); err != nil {
-		h.fail("err.host.no_network", err)
+		if h.ctx.Err() == nil {
+			h.fail("err.host.no_network", err)
+		}
 		return
 	}
 	h.wg.Add(2)
@@ -285,7 +291,7 @@ func (h *hostSession) regather() error {
 	inv := &joincode.Invite{
 		Expires:     time.Now().Add(time.Duration(s.InviteHours) * time.Hour).Truncate(time.Second),
 		Flags:       r.Flags(),
-		Fingerprint: h.e.id.Fingerprint(),
+		Fingerprint: h.id.Fingerprint(),
 		Candidates:  g.Candidates,
 	}
 	if s.RequireApproval {
@@ -304,8 +310,15 @@ func (h *hostSession) regather() error {
 		return err
 	}
 	h.mu.Lock()
+	if h.status != HostStarting && h.status != HostRefreshing {
+		h.mu.Unlock() // stopped meanwhile
+		if g.Mapping != nil {
+			_ = g.Mapping.Close()
+		}
+		return h.ctx.Err()
+	}
 	h.gathered, h.invite, h.code = g, inv, code
-	h.status = HostReady
+	h.status, h.err = HostReady, nil
 	h.mu.Unlock()
 	h.e.log.Info("invite issued", "expires", inv.Expires, "candidates", len(inv.Candidates), "flags", inv.Flags)
 	return nil
@@ -323,14 +336,35 @@ func (e *Engine) NewCode() error {
 		return userErr(http.StatusConflict, "err.host.busy")
 	}
 	h.status = HostRefreshing
+	// Revoke now, not when the new code is ready: from this moment the old
+	// secret admits nobody and old reply codes are refused.
+	h.invite, h.code = nil, ""
 	h.mu.Unlock()
 	e.log.Info("code revoked; issuing a new one")
-	go func() {
-		if err := h.regather(); err != nil && h.ctx.Err() == nil {
-			h.fail("err.host.no_network", err)
-		}
-	}()
+	go h.refresh()
 	return nil
+}
+
+// refresh issues a new code, retrying while the network is down. Connected
+// guests stay connected meanwhile; only new joins wait for the new code.
+func (h *hostSession) refresh() {
+	delay := 5 * time.Second
+	for {
+		err := h.regather()
+		if err == nil || h.ctx.Err() != nil {
+			return
+		}
+		h.mu.Lock()
+		h.err = &UserError{Key: "err.host.no_network", Detail: err.Error()}
+		h.mu.Unlock()
+		h.e.log.Warn("could not issue a new code; retrying", "err", err, "in", delay)
+		select {
+		case <-h.ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		delay = min(2*delay, time.Minute)
+	}
 }
 
 func (h *hostSession) acceptLoop(ln *quic.Listener) {
@@ -367,10 +401,13 @@ func (h *hostSession) handle(conn *quic.Conn) {
 	if len([]rune(name)) > 32 {
 		name = string([]rune(name)[:32])
 	}
-	log := h.e.log.With("guest", name, "remote", remote, "app", hello.App)
+	app := mclan.SanitizeMOTD(hello.App) // unauthenticated: keep log lines short
+	if len([]rune(app)) > 32 {
+		app = string([]rune(app)[:32])
+	}
+	log := h.e.log.With("guest", name, "remote", remote, "app", app)
 	h.mu.Lock()
 	inv := h.invite
-	nGuests := len(h.guests) + len(h.pending)
 	h.mu.Unlock()
 	switch {
 	case hello.V != transport.ProtocolVersion:
@@ -385,15 +422,20 @@ func (h *hostSession) handle(conn *quic.Conn) {
 		log.Info("join rejected: code expired")
 		reject(conn, ctl, transport.ReasonExpired, transport.CodeExpired)
 		return
-	case nGuests >= MaxGuests:
+	}
+	full := func() {
 		log.Info("join rejected: full")
 		reject(conn, ctl, transport.ReasonFull, transport.CodeFull)
-		return
 	}
 	info := GuestInfo{ID: randomID(), Name: name, Addr: remote, Since: time.Now()}
 	if h.e.settings.Get().RequireApproval {
 		p := &pendingJoin{info: info, decide: make(chan bool, 1)}
 		h.mu.Lock()
+		if len(h.guests)+len(h.pending) >= MaxGuests {
+			h.mu.Unlock()
+			full()
+			return
+		}
 		h.pending[info.ID] = p
 		h.mu.Unlock()
 		_ = ctl.Send(transport.Msg{T: "wait"})
@@ -409,6 +451,10 @@ func (h *hostSession) handle(conn *quic.Conn) {
 		h.mu.Lock()
 		delete(h.pending, info.ID)
 		h.mu.Unlock()
+		if h.ctx.Err() != nil {
+			_ = conn.CloseWithError(transport.CodeHostStopped, "host stopped")
+			return
+		}
 		if !allow {
 			if decided {
 				log.Info("join denied by host")
@@ -426,6 +472,12 @@ func (h *hostSession) handle(conn *quic.Conn) {
 	if h.ctx.Err() != nil {
 		h.mu.Unlock()
 		_ = conn.CloseWithError(transport.CodeHostStopped, "")
+		return
+	}
+	// Checked and inserted under one lock, so concurrent joins can't overshoot.
+	if len(h.guests) >= MaxGuests {
+		h.mu.Unlock()
+		full()
 		return
 	}
 	h.guests[info.ID] = g

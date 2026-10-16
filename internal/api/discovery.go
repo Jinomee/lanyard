@@ -22,10 +22,11 @@ import (
 //	core.json  {pid, addr, token, version, apiVersion}, mode 0600
 //
 // A client reads core.json and calls GET /v1/hello with the token. If that
-// answers with a compatible apiVersion, the core is reused; otherwise the
-// client starts one and waits for core.json to appear. Two cores can never
-// run at once because only one can hold core.lock; a core that loses that
-// race exits with ExitAlreadyRunning.
+// answers with a compatible apiVersion, the core is reused. A core with
+// another apiVersion (left over from before an update) is asked to shut
+// down. Then the client starts a core and waits for core.json to appear. Two
+// cores can never run at once because only one can hold core.lock; a core
+// that loses that race exits with ExitAlreadyRunning.
 const (
 	LockFile = "core.lock"
 	InfoFile = "core.json"
@@ -68,7 +69,15 @@ func WriteInfo(dir string, info Info) error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(dir, InfoFile))
+	// On Windows the rename fails while a client happens to have core.json
+	// open for reading; that lasts milliseconds, so retry.
+	for i := 0; ; i++ {
+		err = os.Rename(tmp, filepath.Join(dir, InfoFile))
+		if err == nil || i == 40 {
+			return err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // RemoveInfo deletes core.json if it still describes pid.
@@ -84,6 +93,19 @@ func RemoveInfo(dir string, pid int) {
 
 // ErrNoCore means no compatible core answered.
 var ErrNoCore = errors.New("api: no running core")
+
+// IncompatibleError means a core answered but speaks another API version.
+type IncompatibleError struct {
+	Client     *Client
+	Version    string
+	APIVersion int
+}
+
+func (e *IncompatibleError) Error() string {
+	return fmt.Sprintf("api: incompatible core %s (api %d)", e.Version, e.APIVersion)
+}
+
+func (e *IncompatibleError) Unwrap() error { return ErrNoCore }
 
 // Discover connects to a running, compatible core.
 func Discover(ctx context.Context, dir string) (*Client, error) {
@@ -103,7 +125,7 @@ func Discover(ctx context.Context, dir string) (*Client, error) {
 		return nil, ErrNoCore
 	}
 	if h.APIVersion != engine.APIVersion || h.Product != brand.Name() {
-		return nil, fmt.Errorf("%w: incompatible core %s (api %d)", ErrNoCore, h.Version, h.APIVersion)
+		return nil, &IncompatibleError{Client: c, Version: h.Version, APIVersion: h.APIVersion}
 	}
 	return c, nil
 }
@@ -111,8 +133,18 @@ func Discover(ctx context.Context, dir string) (*Client, error) {
 // Ensure returns a client for the running core, starting one with start() if
 // none answers, and waiting up to timeout for it to come up.
 func Ensure(ctx context.Context, dir string, start func() error, timeout time.Duration) (*Client, error) {
-	if c, err := Discover(ctx, dir); err == nil {
+	c, err := Discover(ctx, dir)
+	if err == nil {
 		return c, nil
+	}
+	// An old core still holds the lock (the app was updated while it ran):
+	// a new one could never start, so ask the old one to exit first.
+	var ie *IncompatibleError
+	if errors.As(err, &ie) {
+		sctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_ = ie.Client.Do(sctx, "POST", "/v1/shutdown", nil, nil)
+		cancel()
+		waitUnlocked(ctx, dir, 10*time.Second)
 	}
 	if err := start(); err != nil {
 		return nil, fmt.Errorf("start core: %w", err)
@@ -129,4 +161,16 @@ func Ensure(ctx context.Context, dir string, start func() error, timeout time.Du
 		}
 	}
 	return nil, ErrNoCore
+}
+
+// waitUnlocked waits until no core holds the lock in dir.
+func waitUnlocked(ctx context.Context, dir string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) && ctx.Err() == nil {
+		if l, err := Claim(dir); err == nil {
+			_ = l.Release()
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }

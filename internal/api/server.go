@@ -215,8 +215,8 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			writeErr(w, &engine.UserError{Key: "api.err.host", Status: http.StatusForbidden})
 			return
 		}
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
+		scheme, got, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+		if !strings.EqualFold(scheme, "Bearer") || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(got)), []byte(s.token)) != 1 {
 			writeErr(w, &engine.UserError{Key: "api.err.token", Status: http.StatusUnauthorized})
 			return
 		}

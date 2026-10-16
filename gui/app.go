@@ -31,10 +31,11 @@ type App struct {
 	ctx  context.Context
 	args []string
 
-	mu     sync.Mutex
-	client *api.Client
-	link   string // join link/code received on the command line
-	quit   confirmTexts
+	ensureMu sync.Mutex // one core start at a time
+	mu       sync.Mutex
+	client   *api.Client
+	link     string // join link/code received on the command line
+	quit     confirmTexts
 }
 
 // NewApp creates the app with the process arguments.
@@ -56,6 +57,30 @@ func linkFromArgs(args []string) string {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	go a.heartbeat(ctx)
+}
+
+// heartbeat tells the core this window is still open, from Go rather than the
+// page, whose timers the webview throttles while minimized. A core whose
+// sessions get no client traffic for a long time assumes the GUI crashed.
+func (a *App) heartbeat(ctx context.Context) {
+	t := time.NewTicker(20 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		a.mu.Lock()
+		c := a.client
+		a.mu.Unlock()
+		if c != nil {
+			hctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_, _ = c.Hello(hctx)
+			cancel()
+		}
+	}
 }
 
 // configDir returns the per-user config directory.
@@ -89,6 +114,9 @@ func startCore() error {
 // core returns a client for the running core, starting one if needed. A core
 // that crashed or idled out is restarted transparently.
 func (a *App) core(ctx context.Context) (*api.Client, error) {
+	// Overlapping calls while the core is down must not each start a core.
+	a.ensureMu.Lock()
+	defer a.ensureMu.Unlock()
 	a.mu.Lock()
 	c := a.client
 	a.mu.Unlock()

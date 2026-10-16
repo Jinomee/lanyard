@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jinomee/lanyard/internal/brand"
+	"github.com/jinomee/lanyard/internal/sysinfo"
 )
 
 // DefaultSTUNServers mixes globally operated servers with servers operated in
@@ -138,6 +139,9 @@ func Dir() (string, error) {
 	if err := os.MkdirAll(d, 0o700); err != nil {
 		return "", err
 	}
+	// It holds the API token and the host's private key. Best effort: some
+	// drives (FAT, network shares) have no permissions to set.
+	_ = sysinfo.RestrictToOwner(d)
 	return d, nil
 }
 

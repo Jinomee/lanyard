@@ -146,6 +146,24 @@ func TestAuth(t *testing.T) {
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("rebinding guard: %d", resp.StatusCode)
 	}
+	// The scheme is case-insensitive (RFC 9110) and required.
+	for header, want := range map[string]int{
+		"Bearer " + n.c.Token(): http.StatusOK,
+		"bearer " + n.c.Token(): http.StatusOK,
+		n.c.Token():             http.StatusUnauthorized,
+		"Basic " + n.c.Token():  http.StatusUnauthorized,
+	} {
+		req, _ := http.NewRequest(http.MethodGet, "http://"+n.c.Addr()+"/v1/hello", nil)
+		req.Header.Set("Authorization", header)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("Authorization %.8q...: %d, want %d", header, resp.StatusCode, want)
+		}
+	}
 }
 
 func TestHostJoinEndToEnd(t *testing.T) {

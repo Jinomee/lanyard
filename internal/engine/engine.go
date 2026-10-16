@@ -73,12 +73,14 @@ type Engine struct {
 	id       *transport.Identity
 	log      *slog.Logger
 
+	joinMu   sync.Mutex // serializes StartJoin/StopJoin
 	mu       sync.Mutex
 	host     *hostSession
 	join     *joinSession
 	diag     DiagState
 	upd      UpdateState
 	firewall string
+	fwCheck  bool // a firewall check is running
 	activity time.Time
 
 	ctx    context.Context
@@ -136,13 +138,54 @@ func fmtFP(fp [12]byte) string {
 	return string(b)
 }
 
+// checkFirewall refreshes the Windows firewall status. It runs at start,
+// whenever hosting starts, and every minute while the status is not "allowed",
+// so the banner follows what the user does in Windows.
+func (e *Engine) checkFirewall() {
+	if runtime.GOOS != "windows" || e.opt.Exe == "" {
+		return
+	}
+	e.mu.Lock()
+	if e.fwCheck {
+		e.mu.Unlock()
+		return
+	}
+	e.fwCheck = true
+	old := e.firewall
+	e.mu.Unlock()
+	fw := sysinfo.FirewallStatus(e.opt.Exe)
+	e.mu.Lock()
+	e.firewall, e.fwCheck = fw, false
+	e.mu.Unlock()
+	if fw != old {
+		e.log.Info("firewall rule check", "status", fw)
+	}
+}
+
+func (e *Engine) firewallLoop() {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		e.checkFirewall()
+		for {
+			select {
+			case <-t.C:
+			case <-e.ctx.Done():
+				return
+			}
+			e.mu.Lock()
+			ok := e.firewall == sysinfo.FirewallAllowed
+			e.mu.Unlock()
+			if !ok {
+				break
+			}
+		}
+	}
+}
+
 func (e *Engine) background() {
 	if runtime.GOOS == "windows" && e.opt.Exe != "" {
-		fw := sysinfo.FirewallStatus(e.opt.Exe)
-		e.mu.Lock()
-		e.firewall = fw
-		e.mu.Unlock()
-		e.log.Info("firewall rule check", "status", fw)
+		go e.firewallLoop()
 	}
 	select {
 	case <-time.After(5 * time.Second):
@@ -170,17 +213,23 @@ func (e *Engine) Touch() {
 	e.mu.Unlock()
 }
 
-// Idle reports whether the core has had no activity for d and no session is active.
+// Idle reports whether the core should exit: no API activity for d and no
+// active session, or active sessions that no client has looked at for
+// AbandonedAfter(d) (the GUI crashed or was killed).
 func (e *Engine) Idle(d time.Duration) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.host != nil && e.host.active() {
-		return false
+	quiet := time.Since(e.activity)
+	if (e.host != nil && e.host.active()) || (e.join != nil && e.join.active()) {
+		return quiet > AbandonedAfter(d)
 	}
-	if e.join != nil && e.join.active() {
-		return false
-	}
-	return time.Since(e.activity) > d
+	return quiet > d
+}
+
+// AbandonedAfter is how long sessions survive without any client, for an
+// idle timeout d. Clients (the GUI) send a heartbeat well within this.
+func AbandonedAfter(d time.Duration) time.Duration {
+	return max(10*time.Minute, 10*d)
 }
 
 // Close stops all sessions.
@@ -212,10 +261,10 @@ func (e *Engine) SetSettings(s config.Settings) (config.Settings, error) {
 
 // ResetIdentity creates a new host certificate (invalidates every old code).
 func (e *Engine) ResetIdentity() error {
+	// Held throughout so hosting can't start halfway through.
 	e.mu.Lock()
-	hosting := e.host != nil && e.host.active()
-	e.mu.Unlock()
-	if hosting {
+	defer e.mu.Unlock()
+	if e.host != nil && e.host.active() {
 		return userErr(http.StatusConflict, "err.identity.hosting")
 	}
 	path := filepath.Join(e.opt.Dir, "identity.pem")
@@ -226,9 +275,7 @@ func (e *Engine) ResetIdentity() error {
 	if err != nil {
 		return err
 	}
-	e.mu.Lock()
 	e.id = id
-	e.mu.Unlock()
 	e.log.Info("host identity reset", "fingerprint", fmtFP(id.Fingerprint()))
 	return nil
 }
@@ -365,11 +412,26 @@ func (e *Engine) LogLines() []string { return e.opt.Sink.Lines() }
 
 // ExportLogs writes a zip with logs, state and settings.
 func (e *Engine) ExportLogs(w io.Writer) error {
-	state, _ := json.MarshalIndent(e.State(), "", "  ")
+	st := e.State()
+	// Whoever receives the export must not be able to join with it.
+	if st.Host != nil {
+		st.Host.Code, st.Host.Link = redacted(st.Host.Code), redacted(st.Host.Link)
+	}
+	if st.Join != nil {
+		st.Join.Code, st.Join.ReplyCode = redacted(st.Join.Code), redacted(st.Join.ReplyCode)
+	}
+	state, _ := json.MarshalIndent(st, "", "  ")
 	settings, _ := json.MarshalIndent(e.settings.Get(), "", "  ")
 	readme := []byte(brand.Name() + " " + brand.Version + " diagnostic export, " + time.Now().Format(time.RFC3339) +
 		"\nContains IP addresses of this computer and of peers. Nothing was sent anywhere; share it only if you choose to.\n")
 	return e.opt.Sink.Export(w, map[string][]byte{"state.json": state, "settings.json": settings, "README.txt": readme})
+}
+
+func redacted(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "(removed)"
 }
 
 // ExportLogsBytes is ExportLogs into memory.

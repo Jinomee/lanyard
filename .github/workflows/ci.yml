@@ -24,6 +24,14 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           version: v2.14.0
+      # Windows-only files (firewall check, ACLs, process start) are skipped
+      # by the Linux run above; lint them too.
+      - name: golangci-lint (Windows build tags)
+        uses: golangci/golangci-lint-action@v8
+        env:
+          GOOS: windows
+        with:
+          version: v2.14.0
       - name: Brand files in sync
         run: go run ./tools/brandsync -check
 

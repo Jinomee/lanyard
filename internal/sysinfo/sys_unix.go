@@ -28,3 +28,6 @@ func Detach(cmd *exec.Cmd) {
 
 // FirewallStatus reports whether the OS firewall allows inbound traffic for exe.
 func FirewallStatus(string) string { return FirewallNotApplicable }
+
+// RestrictToOwner makes dir private to the current user (mode 0700).
+func RestrictToOwner(dir string) error { return os.Chmod(dir, 0o700) } //nolint:gosec // a directory needs x to be usable

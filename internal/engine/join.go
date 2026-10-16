@@ -179,7 +179,11 @@ func (e *Engine) StartJoin(code string, timeout time.Duration) error {
 	if c, _, ok := joincode.Find(code); ok {
 		code = c
 	}
-	e.StopJoin()
+	// One StartJoin/StopJoin at a time, so two quick joins can't leave an
+	// orphaned session behind.
+	e.joinMu.Lock()
+	defer e.joinMu.Unlock()
+	e.stopJoinLocked()
 	ctx, cancel := context.WithCancel(e.ctx)
 	if timeout <= 0 || timeout > ReplyLifetime {
 		timeout = ReplyLifetime
@@ -326,7 +330,15 @@ func (j *joinSession) finishFailed(d *connect.Diagnosis, err error) {
 
 func (j *joinSession) connected(jn *connect.Joined) {
 	s := j.e.settings.Get()
-	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", itoa(s.GuestPort)))
+	var ln net.Listener
+	var err error
+	if s.GuestPort != 0 && portAnswers(s.GuestPort) {
+		// Windows lets us bind 127.0.0.1:P even when another program listens
+		// on 0.0.0.0:P, silently taking its local connections. Don't.
+		err = errors.New("another program is listening on the port")
+	} else {
+		ln, err = net.Listen("tcp", net.JoinHostPort("127.0.0.1", itoa(s.GuestPort)))
+	}
 	if err != nil && s.GuestPort != 0 {
 		j.e.log.Warn("guest port busy; using a random one", "port", s.GuestPort, "err", err)
 		ln, err = net.Listen("tcp", "127.0.0.1:0")
@@ -342,17 +354,12 @@ func (j *joinSession) connected(jn *connect.Joined) {
 	if err != nil {
 		j.e.log.Warn("LAN announcement unavailable", "err", err)
 	}
-	j.e.mu.Lock()
-	if j.e.host != nil {
-		if d := j.e.host.detectorRef(); d != nil {
-			d.Ignore(port, true)
-		}
-	}
-	j.e.mu.Unlock()
+	j.e.ignorePort(port, true)
 	via := jn.Via
 	j.mu.Lock()
 	if j.status == JoinStopped {
 		j.mu.Unlock()
+		j.e.ignorePort(port, false)
 		_ = ln.Close()
 		if ann != nil {
 			_ = ann.Close()
@@ -427,13 +434,7 @@ func (j *joinSession) release() {
 	if ln != nil {
 		port := uint16(ln.Addr().(*net.TCPAddr).Port) //nolint:gosec // TCP port
 		_ = ln.Close()
-		j.e.mu.Lock()
-		if j.e.host != nil {
-			if d := j.e.host.detectorRef(); d != nil {
-				d.Ignore(port, false)
-			}
-		}
-		j.e.mu.Unlock()
+		j.e.ignorePort(port, false)
 	}
 	if ann != nil {
 		_ = ann.Close()
@@ -454,6 +455,12 @@ func (j *joinSession) release() {
 
 // StopJoin leaves the host (or cancels connecting).
 func (e *Engine) StopJoin() {
+	e.joinMu.Lock()
+	defer e.joinMu.Unlock()
+	e.stopJoinLocked()
+}
+
+func (e *Engine) stopJoinLocked() {
 	e.mu.Lock()
 	j := e.join
 	e.mu.Unlock()
@@ -491,6 +498,29 @@ func (h *hostSession) detectorRef() *mclan.Detector {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.detector
+}
+
+// ignorePort tells the host's world detector (if hosting) to skip or stop
+// skipping our own guest-side announcement on port.
+func (e *Engine) ignorePort(port uint16, on bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.host != nil {
+		if d := e.host.detectorRef(); d != nil {
+			d.Ignore(port, on)
+		}
+	}
+}
+
+// portAnswers reports whether something accepts TCP connections on
+// 127.0.0.1:port.
+func portAnswers(port int) bool {
+	c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", itoa(port)), 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
 }
 
 // ignoreJoinPorts excludes an active guest listener from a new detector.
