@@ -8,7 +8,7 @@ import (
 )
 
 func lockFile(*os.File) error { return nil }
-func unlock(*os.File)          {}
+func unlock(*os.File)         {}
 
 // Detach is a no-op on this platform.
 func Detach(*exec.Cmd) {}

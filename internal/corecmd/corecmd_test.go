@@ -17,7 +17,9 @@ func TestSingleCoreAndDiscovery(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("LANYARD_HOME", dir)
 	done := make(chan int, 1)
-	go func() { done <- Main([]string{"serve", "-home", dir, "-no-update-checks"}, &bytes.Buffer{}, &bytes.Buffer{}) }()
+	go func() {
+		done <- Main([]string{"serve", "-home", dir, "-no-update-checks"}, &bytes.Buffer{}, &bytes.Buffer{})
+	}()
 
 	ctx := context.Background()
 	c, err := api.Ensure(ctx, dir, func() error { return nil }, 10*time.Second)

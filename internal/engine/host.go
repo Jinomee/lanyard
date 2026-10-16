@@ -762,4 +762,3 @@ func removeFile(p string) error {
 	}
 	return nil
 }
-
