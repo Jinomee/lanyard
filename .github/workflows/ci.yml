@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+      - name: Brand files in sync
+        run: go run ./tools/brandsync -check
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Unit tests (race)
+        if: runner.os != 'Windows'
+        run: go test -race -count=1 ./...
+      - name: Unit tests
+        if: runner.os == 'Windows'
+        run: go test -count=1 ./...
+      - name: Fuzz (short)
+        if: runner.os == 'Linux'
+        run: |
+          go test ./internal/joincode -run '^$' -fuzz FuzzDecode -fuzztime 30s
+          go test ./internal/joincode -run '^$' -fuzz FuzzEncode -fuzztime 20s
+          go test ./internal/mclan -run '^$' -fuzz FuzzParse -fuzztime 20s
+
+  cross-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [windows, darwin, linux]
+        goarch: [amd64, arm64]
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go build ${{ matrix.goos }}/${{ matrix.goarch }}
+        run: |
+          go build ./...
+          go vet ./...
+
+  stun-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Probe STUN servers
+        run: go run ./cmd/stuncheck -all | tee -a "$GITHUB_STEP_SUMMARY"

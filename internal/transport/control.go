@@ -76,7 +76,7 @@ func NewControl(s *quic.Stream) *Control {
 
 // Send writes one message.
 func (c *Control) Send(m Msg) error {
-	b, err := json.Marshal(m)
+	b, err := json.Marshal(m) //nolint:gosec // G117: the secret is meant to be sent, over the pinned TLS channel
 	if err != nil {
 		return err
 	}

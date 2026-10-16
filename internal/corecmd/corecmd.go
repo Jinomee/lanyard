@@ -209,7 +209,7 @@ func CaptureLAN(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	dir := args[0]
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}

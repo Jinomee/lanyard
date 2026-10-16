@@ -218,15 +218,12 @@ func (e *Engine) ResetIdentity() error {
 	if hosting {
 		return userErr(http.StatusConflict, "err.identity.hosting")
 	}
-	id, err := transport.NewIdentity()
-	if err != nil {
-		return err
-	}
 	path := filepath.Join(e.opt.Dir, "identity.pem")
 	if err := removeFile(path); err != nil {
 		return err
 	}
-	if id, err = transport.LoadOrCreateIdentity(path); err != nil {
+	id, err := transport.LoadOrCreateIdentity(path)
+	if err != nil {
 		return err
 	}
 	e.mu.Lock()

@@ -165,7 +165,7 @@ func (c *Checker) Check(ctx context.Context) Result {
 	if c.Client == nil {
 		c.Client = &http.Client{}
 	}
-	var lastErr error = ErrUnreachable
+	lastErr := ErrUnreachable
 	for _, s := range c.Sources {
 		sctx, cancel := context.WithTimeout(ctx, s.Timeout)
 		m, err := c.fromSource(sctx, s)

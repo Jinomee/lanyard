@@ -108,8 +108,8 @@ func Map(ctx context.Context, internalPort uint16, opt Options) Result {
 		if win == nil {
 			win = &Mapping{Protocol: r.m.name(), External: r.ext, Internal: internalPort, Lifetime: r.ttl, m: r.m}
 		} else {
-			// Lost the race: tidy up the router.
-			go func() {
+			// Lost the race: tidy up the router (ctx may already be done).
+			go func() { //nolint:gosec // G118: deliberate fresh context for cleanup
 				c, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
 				_ = r.m.remove(c, internalPort, r.ext.Port())

@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -51,17 +52,17 @@ func TestVerifyRejectsTampering(t *testing.T) {
 	body, _ := os.ReadFile("testdata/manifest.json")
 	sig, _ := os.ReadFile("testdata/manifest.json.minisig")
 	tampered := []byte(strings.Replace(string(body), "example.invalid/a", "evil.invalid/a", 1))
-	if _, err := Verify(pk, tampered, sig); err != ErrSignature {
+	if _, err := Verify(pk, tampered, sig); !errors.Is(err, ErrSignature) {
 		t.Fatalf("tampered manifest: %v", err)
 	}
 	// Signature from a different key.
 	_, other, _ := minisign.GenerateKey(rand.Reader)
-	if _, err := Verify(pk, body, minisign.Sign(other, body)); err != ErrSignature {
+	if _, err := Verify(pk, body, minisign.Sign(other, body)); !errors.Is(err, ErrSignature) {
 		t.Fatalf("foreign key: %v", err)
 	}
 	// Tampered trusted comment.
 	bad := strings.Replace(string(sig), "LANyard 9.9.9", "LANyard 9.9.8", 1)
-	if _, err := Verify(pk, body, []byte(bad)); err != ErrSignature {
+	if _, err := Verify(pk, body, []byte(bad)); !errors.Is(err, ErrSignature) {
 		t.Fatalf("trusted comment: %v", err)
 	}
 }

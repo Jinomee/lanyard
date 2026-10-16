@@ -1,0 +1,39 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - nilerr
+    - revive
+    - unconvert
+    - copyloopvar
+  settings:
+    gosec:
+      excludes:
+        - G104 # unchecked errors on Close/cleanup paths are deliberate (errcheck covers the rest)
+        - G115 # integer conversions are range-checked where it matters (ports, lengths)
+        - G304 # file paths come from the per-user config directory, not from untrusted input
+        - G703 # same as G304 (taint analysis variant)
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: indent-error-flow
+        - name: error-strings
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck, revive]
+formatters:
+  enable:
+    - gofmt

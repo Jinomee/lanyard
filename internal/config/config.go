@@ -160,7 +160,7 @@ func Open(dir string) (*Store, error) {
 	s := Defaults()
 	if err := json.Unmarshal(b, &s); err != nil || s.Validate() != nil {
 		_ = os.Rename(st.path, st.path+".bad")
-		return st, nil
+		return st, nil //nolint:nilerr // a corrupt file falls back to defaults
 	}
 	st.cur = s
 	return st, nil

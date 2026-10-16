@@ -3,7 +3,6 @@ package transport
 import (
 	"crypto/subtle"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"time"
 
@@ -36,12 +35,13 @@ func ClientTLS(fp [joincode.FingerprintLen]byte) *tls.Config {
 		ServerName:         "lanyard",
 		NextProtos:         []string{ALPN},
 		MinVersion:         tls.VersionTLS13,
-		InsecureSkipVerify: true, //nolint:gosec // verified by VerifyPeerCertificate (fingerprint pinning)
-		VerifyPeerCertificate: func(raw [][]byte, _ [][]*x509.Certificate) error {
-			if len(raw) == 0 {
+		InsecureSkipVerify: true, //nolint:gosec // verified by VerifyConnection (fingerprint pinning)
+		// VerifyConnection runs on every handshake, including resumed ones.
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
 				return ErrFingerprint
 			}
-			got := FingerprintOf(raw[0])
+			got := FingerprintOf(cs.PeerCertificates[0].Raw)
 			if subtle.ConstantTimeCompare(got[:], fp[:]) != 1 {
 				return ErrFingerprint
 			}
