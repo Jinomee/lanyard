@@ -54,13 +54,19 @@ func TestRestrictToOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	me := u.User.Sid.String()
+	// How SDDL writes this account: well-known accounts appear as an alias
+	// (the built-in Administrator is "LA"), others as their SID.
+	owner, err := windows.SecurityDescriptorFromString("O:" + u.User.Sid.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	me := strings.TrimPrefix(owner.String(), "O:")
 	for _, p := range []string{dir, filepath.Join(dir, "core.json")} {
 		s := sddl(t, p)
 		if strings.Contains(s, ";;;WD)") || strings.Contains(s, ";;;BU)") || strings.Contains(s, ";;;AU)") {
 			t.Errorf("%s: others still have access: %s", p, s)
 		}
-		if !strings.Contains(s, me) {
+		if !strings.Contains(s, ";;;"+me+")") {
 			t.Errorf("%s: the current user lost access: %s", p, s)
 		}
 	}
