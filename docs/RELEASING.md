@@ -28,19 +28,51 @@ go run ./cmd/lanyard-release keygen -pub internal/update/pubkey.txt -key lanyard
 
 ### 2. Update mirror (for players who can't reach GitHub)
 
-Set `updateServer` in `internal/brand/brand.json` (placeholder:
-`https://updates.example.com/lanyard/`). The release workflow uploads to it by
-rsync over SSH when these are configured:
+The app checks GitHub first (3 s timeout), then the mirror set as
+`updateServer` in `internal/brand/brand.json`:
+**`https://updates.jinome.org/lanyard/`**. Because the manifest is signed, the
+mirror does not need to be trusted. It only has to serve the files
+byte-for-byte unchanged.
 
-* variables `MIRROR_HOST` (`user@host`) and `MIRROR_PATH` (the directory that
-  serves `updateServer`),
-* secret `MIRROR_SSH_KEY` (a deploy key allowed only to write that directory).
+**Layout:** `<updateServer>/manifest.json` (+ `.minisig`) describes the latest
+**stable** release; `<updateServer>/<version>/<files>` holds every release's
+files (pre-releases included, e.g. `0.1.0-rc.1/`).
 
-Layout on the server: `<updateServer>/manifest.json` (+ `.minisig`) for the
-latest release, and `<updateServer>/<version>/<files>` for downloads. Any
-static file host works, for example a server in mainland China or an
-object-storage bucket with a CDN. Because the manifest is signed, the mirror
-does not need to be trusted.
+**Server** (jinome.org host, Australia):
+
+* Files live in `/www/wwwroot/updates.jinome.org/lanyard`, served by nginx
+  over HTTPS with a Let's Encrypt certificate (auto-renewed).
+* Byte-exact: gzip off, correct `Content-Length`, Range requests supported,
+  real 404s, no directory listing, no access log.
+* Caching: `manifest.json` and `manifest.json.minisig` are sent with
+  `no-cache`, so clients see a new release promptly. `<version>/*` is
+  `public, max-age=31536000, immutable`. **Never publish different bytes under
+  a version that was already released.** Fix problems by releasing a new
+  version, not by re-running the release workflow for an old tag.
+* Uploads use the `lanyard-deploy` user, key-only. Its key is forced to
+  `rrsync -wo -no-del /www/wwwroot/updates.jinome.org/lanyard`: write-only,
+  no deletes, no shell, every path relative to that directory. Old versions
+  therefore stay on the mirror until removed by hand on the server.
+* Reachability (Globalping, 2026-10-16): 8/8 mainland China probes (Beijing,
+  Shanghai, Guangzhou, Shenzhen, Hangzhou, Ningbo, Wuhan, Nanjing) got HTTP 200
+  in 1.1–2.4 s; Hong Kong, Tokyo and Singapore too. These were mostly cloud or
+  backbone probes, and large-file download speed from Australia hasn't been
+  measured.
+
+**GitHub configuration** (Settings → Secrets and variables → Actions):
+
+* variables `MIRROR_HOST` = `lanyard-deploy@updates.jinome.org`,
+  `MIRROR_PATH` = `.` (relative on purpose: rrsync prefixes absolute paths
+  with the mirror directory);
+* secret `MIRROR_SSH_KEY` = the deploy key's private half.
+
+**What the release workflow does:** it lists the mirror URL
+(`<updateServer>/<version>/<file>`) next to the GitHub URL for every file in
+the manifest. After publishing on GitHub it rsyncs `dist/` to `./<version>/`.
+Then, **only for stable versions** (no `-` in the version), it rsyncs
+`manifest.json` and `manifest.json.minisig` to `./`. The workflow must stay
+within the deploy key's limits: rsync uploads only, relative paths, no
+`--delete`, no other ssh commands.
 
 ### 3. Code signing (deferred: v1 ships unsigned)
 

@@ -19,8 +19,10 @@ list.
 
 ### Download
 
-Get the latest release from the [Releases page](../../releases) (the
-maintainer's mirror is listed there too):
+Get the latest release from the [Releases page](../../releases). If GitHub is
+slow or blocked for you, the same files are mirrored at
+`https://updates.jinome.org/lanyard/<version>/` (for example
+`https://updates.jinome.org/lanyard/0.1.0/`):
 
 * `LANyard-x.y.z-windows-amd64-setup.exe` — installer (recommended: adds the
   Windows Firewall rule, Start-menu entry and `lanyard://` links)
@@ -155,7 +157,7 @@ License: [GPL-3.0](LICENSE).
 
 ### 下载
 
-在 [Releases 页面](../../releases) 下载最新版本（页面上也列出了维护者的镜像地址）：
+在 [Releases 页面](../../releases) 下载最新版本。如果 GitHub 访问很慢或打不开，同样的文件也可以从镜像下载：`https://updates.jinome.org/lanyard/<版本号>/`（例如 `https://updates.jinome.org/lanyard/0.1.0/`）：
 
 * `LANyard-x.y.z-windows-amd64-setup.exe` —— 安装包（推荐：会自动添加 Windows 防火墙规则、开始菜单快捷方式和 `lanyard://` 链接支持）
 * `LANyard-x.y.z-windows-amd64.exe` —— 绿色版，直接运行

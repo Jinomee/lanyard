@@ -209,7 +209,18 @@ jobs:
         env:
           MIRROR_SSH_KEY: ${{ secrets.MIRROR_SSH_KEY }}
         run: |
+          # The deploy key is forced to `rrsync -wo -no-del <mirror dir>` on the
+          # server: upload-only, no deletes, no shell. Keep remote paths
+          # relative (MIRROR_PATH is "."), and never add --delete or any ssh
+          # command other than these rsync uploads.
           install -m 600 /dev/null ~/mirror_key && echo "$MIRROR_SSH_KEY" > ~/mirror_key
-          rsync -av -e "ssh -i ~/mirror_key -o StrictHostKeyChecking=accept-new" dist/ "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/$V/"
-          # The mirror's top-level manifest is what clients fetch.
-          rsync -av -e "ssh -i ~/mirror_key -o StrictHostKeyChecking=accept-new" dist/manifest.json dist/manifest.json.minisig "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/"
+          ssh_cmd="ssh -i $HOME/mirror_key -o StrictHostKeyChecking=accept-new"
+          # 1. Versioned files first, for every release (pre-releases too).
+          rsync -av -e "$ssh_cmd" dist/ "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/$V/"
+          # 2. Then the top-level manifest clients fetch, only for stable
+          #    releases: like GitHub's /releases/latest, the mirror never
+          #    offers a pre-release (a version containing "-") as an update.
+          case "$V" in
+            *-*) echo "Pre-release $V: top-level manifest on the mirror left unchanged." ;;
+            *)   rsync -av -e "$ssh_cmd" dist/manifest.json dist/manifest.json.minisig "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/" ;;
+          esac
