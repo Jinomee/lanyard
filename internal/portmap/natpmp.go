@@ -38,7 +38,7 @@ func (n *natpmpMapper) add(ctx context.Context, internalPort, externalPort uint1
 		if err != nil {
 			// Result code 3 = "network failure": the box has no external address.
 			if strings.Contains(err.Error(), "result code 3") {
-				err = fmt.Errorf("%w (%v)", ErrPrivateExternal, err)
+				err = fmt.Errorf("%w (%w)", ErrPrivateExternal, err)
 			}
 			ch <- out{err: err}
 			return

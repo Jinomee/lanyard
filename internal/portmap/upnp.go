@@ -79,7 +79,7 @@ func (u *upnpMapper) add(ctx context.Context, internalPort, externalPort uint16,
 	if err != nil {
 		// miniupnpd answers 501 when its WAN address is private (CGNAT).
 		if strings.Contains(err.Error(), "501") {
-			return netip.AddrPort{}, 0, fmt.Errorf("%w (%v)", ErrPrivateExternal, err)
+			return netip.AddrPort{}, 0, fmt.Errorf("%w (%w)", ErrPrivateExternal, err)
 		}
 		return netip.AddrPort{}, 0, wrap("get external IP", err)
 	}

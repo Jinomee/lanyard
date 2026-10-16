@@ -4,11 +4,11 @@
 // namespaces and runs two real LANyard cores across them, behind emulated
 // NATs:
 //
-//	                ly-inet (bridge br0 = "the internet", STUN server 11.0.0.100/.101)
-//	              /                                    \
-//	  ly-hr (host router, NAT)                   ly-gr (guest router, NAT)
-//	        |                                          |
-//	  ly-h (host PC: core + fake Minecraft)      ly-g (guest PC: core + fake client)
+//	              ly-inet (bridge br0 = "the internet", STUN server 11.0.0.100/.101)
+//	            /                                    \
+//	ly-hr (host router, NAT)                   ly-gr (guest router, NAT)
+//	      |                                          |
+//	ly-h (host PC: core + fake Minecraft)      ly-g (guest PC: core + fake client)
 //
 // NAT behaviours are built with nftables in the router namespaces:
 //
