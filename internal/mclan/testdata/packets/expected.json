@@ -1,0 +1,12 @@
+{
+  "vanilla_singleplayer.bin":    {"motd": "Steve - New World", "port": 54321},
+  "vanilla_chinese_world.bin":   {"motd": "小明 - 我的世界 生存", "port": 61234},
+  "vanilla_formatting_codes.bin":{"motd": "§aAlex§r - Skyblock 1.21", "port": 25565},
+  "server_plugin_broadcast.bin": {"motd": "A Minecraft Server", "port": 25565},
+  "lanyard_guest.bin":           {"motd": "Steve - New World (via LANyard)", "port": 50123},
+  "missing_motd.bin":            {"error": true},
+  "invalid_double_motd.bin":     {"error": true},
+  "invalid_no_ad.bin":           {"error": true},
+  "invalid_port_range.bin":      {"error": true},
+  "invalid_other_protocol.bin":  {"error": true}
+}
