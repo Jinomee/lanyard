@@ -1,0 +1,212 @@
+name: Release
+
+# Push a tag like v1.2.3 to build, sign and publish a release.
+#
+# Required secrets (see docs/RELEASING.md):
+#   MINISIGN_SECRET_KEY   contents of the encrypted minisign key (lanyard-release keygen)
+#   MINISIGN_PASSWORD     its password
+# Optional:
+#   SIGNPATH_API_TOKEN + vars SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
+#   SIGNPATH_POLICY_SLUG   Authenticode signing via SignPath Foundation (TODO: apply)
+#   MIRROR_SSH_KEY + vars MIRROR_HOST / MIRROR_PATH   upload to the maintainer's update server
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - id: v
+        shell: bash
+        run: |
+          v="${TAG#v}"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "numeric=${v%%-*}" >> "$GITHUB_OUTPUT"   # NSIS needs X.Y.Z
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gui/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Wails CLI and NSIS
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { choco install nsis -y --no-progress }
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Build
+        shell: pwsh
+        run: |
+          go run ./tools/brandsync -version "${{ steps.v.outputs.numeric }}"
+          cd gui
+          wails build -platform windows/amd64 -nsis -clean -trimpath `
+            -ldflags "-s -w -X github.com/jinomee/mc/internal/brand.Version=${{ steps.v.outputs.version }}"
+
+      # ---- Code signing (TODO for the maintainer: apply to SignPath Foundation) ----
+      # Until SIGNPATH_ORGANIZATION_ID is set, these steps are skipped and the
+      # release is unsigned (Windows SmartScreen will warn users).
+      # Order matters: sign the exe, rebuild the installer around the signed
+      # exe, then sign the installer.
+      - name: Upload unsigned exe for signing
+        id: unsigned-exe
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-exe
+          path: gui/build/bin/LANyard.exe
+      - name: Sign exe (SignPath)
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: exe
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-exe
+      - name: Rebuild installer around the signed exe
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        run: |
+          Copy-Item signed-exe\LANyard.exe gui\build\bin\LANyard.exe -Force
+          cd gui\build\windows\installer
+          makensis -DARG_WAILS_AMD64_BINARY="..\..\bin\LANyard.exe" project.nsi
+      - name: Upload unsigned installer for signing
+        id: unsigned-installer
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer
+          path: gui/build/bin/*installer.exe
+      - name: Sign installer (SignPath)
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-installer
+      - name: Use signed installer
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        run: Copy-Item signed-installer\*.exe gui\build\bin\ -Force
+      # ---- end of signing ----
+
+      - name: Collect
+        shell: pwsh
+        run: |
+          $v = "${{ steps.v.outputs.version }}"
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item gui\build\bin\LANyard.exe "dist\LANyard-$v-windows-amd64.exe"
+          Copy-Item (Get-ChildItem gui\build\bin\*installer.exe)[0] "dist\LANyard-$v-windows-amd64-setup.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/*
+
+  core:
+    runs-on: ubuntu-latest
+    needs: windows
+    strategy:
+      matrix:
+        target: [windows/amd64, linux/amd64, linux/arm64, darwin/amd64, darwin/arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build headless core
+        env:
+          CGO_ENABLED: "0"
+          V: ${{ needs.windows.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          export GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}"
+          ext=""; [ "$GOOS" = windows ] && ext=".exe"
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X github.com/jinomee/mc/internal/brand.Version=$V" \
+            -o "dist/lanyard-core-$V-$GOOS-$GOARCH$ext" ./cmd/lanyard-core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-core-${{ strategy.job-index }}
+          path: dist/*
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [windows, core]
+    env:
+      V: ${{ needs.windows.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - name: Manifest (sha256 of every file, GitHub + mirror URLs)
+        run: |
+          mirror="$(go run ./tools/brandsync -print-update-server 2>/dev/null || true)"
+          go run ./cmd/lanyard-release manifest -version "$V" -dir dist \
+            -github "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}" \
+            -mirror "${mirror%/}/$V" \
+            -notes-url "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+      - name: Sign manifest (minisign / Ed25519)
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          if [ -z "$MINISIGN_SECRET_KEY" ]; then
+            echo "::error::MINISIGN_SECRET_KEY is not set. See docs/RELEASING.md. Refusing to publish an unsigned manifest."
+            exit 1
+          fi
+          go run ./cmd/lanyard-release sign -in dist/manifest.json
+          # Must verify with the key embedded in the app, or users would never see the update.
+          go run ./cmd/lanyard-release verify -in dist/manifest.json
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=""; case "$V" in *-*) pre="--prerelease";; esac
+          gh release create "$TAG" dist/* --title "LANyard $V" --generate-notes $pre --verify-tag || \
+            gh release upload "$TAG" dist/* --clobber
+      - name: Upload to the update mirror
+        if: vars.MIRROR_HOST != ''
+        env:
+          MIRROR_SSH_KEY: ${{ secrets.MIRROR_SSH_KEY }}
+        run: |
+          install -m 600 /dev/null ~/mirror_key && echo "$MIRROR_SSH_KEY" > ~/mirror_key
+          rsync -av -e "ssh -i ~/mirror_key -o StrictHostKeyChecking=accept-new" dist/ "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/$V/"
+          # The mirror's top-level manifest is what clients fetch.
+          rsync -av -e "ssh -i ~/mirror_key -o StrictHostKeyChecking=accept-new" dist/manifest.json dist/manifest.json.minisig "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/"

@@ -19,8 +19,14 @@ const wailsJSON = "gui/wails.json"
 
 func main() {
 	check := flag.Bool("check", false, "only report whether files are in sync")
+	version := flag.String("version", "", "also set the product version (release builds; not committed)")
+	printServer := flag.Bool("print-update-server", false, "print the update mirror base URL and exit")
 	flag.Parse()
 	b := brand.Get()
+	if *printServer {
+		fmt.Println(b.UpdateServer)
+		return
+	}
 	orig, err := os.ReadFile(wailsJSON)
 	if os.IsNotExist(err) {
 		return
@@ -47,6 +53,9 @@ func main() {
 		"description": b.Name + " join link",
 		"role":        "Viewer",
 	}}
+	if *version != "" {
+		info["productVersion"] = *version
+	}
 	cfg["info"] = info
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

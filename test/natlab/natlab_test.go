@@ -82,6 +82,10 @@ var scenarios = []scenario{
 
 func buildBinaries(t *testing.T) (core, helper string) {
 	t.Helper()
+	// CI builds as the normal user and runs the test binary as root.
+	if c, h := os.Getenv("NATLAB_CORE"), os.Getenv("NATLAB_HELPER"); c != "" && h != "" {
+		return c, h
+	}
 	dir := t.TempDir()
 	core, helper = filepath.Join(dir, "lanyard-core"), filepath.Join(dir, "helper")
 	for _, b := range [][2]string{{core, "github.com/jinomee/mc/cmd/lanyard-core"}, {helper, "github.com/jinomee/mc/test/natlab/helper"}} {

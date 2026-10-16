@@ -81,3 +81,90 @@ jobs:
           go-version-file: go.mod
       - name: Probe STUN servers
         run: go run ./cmd/stuncheck -all | tee -a "$GITHUB_STEP_SUMMARY"
+
+  nat-matrix:
+    name: NAT matrix (network namespaces)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install nftables, iproute2, miniupnpd
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nftables iproute2 miniupnpd-nftables
+          # The package may start a system-wide daemon; the lab runs its own per namespace.
+          sudo systemctl stop miniupnpd 2>/dev/null || true
+          sudo systemctl disable miniupnpd 2>/dev/null || true
+      - name: Build lab binaries
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p bin
+          go build -o bin/lanyard-core ./cmd/lanyard-core
+          go build -o bin/helper ./test/natlab/helper
+          go test -c -tags natlab -o bin/natlab.test ./test/natlab
+      - name: Run NAT matrix (as root)
+        run: |
+          cd test/natlab
+          sudo NATLAB_CORE="$GITHUB_WORKSPACE/bin/lanyard-core" NATLAB_HELPER="$GITHUB_WORKSPACE/bin/helper" \
+            "$GITHUB_WORKSPACE/bin/natlab.test" -test.v -test.timeout 25m 2>&1 | tee "$RUNNER_TEMP/natlab.log"
+          exit "${PIPESTATUS[0]}"
+      - name: Summary
+        if: always()
+        run: |
+          echo '## NAT matrix' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^\s+--- |connected via|failure:|host report' "$RUNNER_TEMP/natlab.log" >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  gui-windows:
+    name: Windows app + installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gui/go.mod
+          cache-dependency-path: |
+            go.sum
+            gui/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gui/frontend/package-lock.json
+      - name: Install Wails CLI and NSIS
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { choco install nsis -y --no-progress }
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Build LANyard.exe and installer
+        shell: pwsh
+        run: |
+          go run ./tools/brandsync -version "0.0.${{ github.run_number }}"
+          cd gui
+          wails build -platform windows/amd64 -nsis -clean -trimpath `
+            -ldflags "-X github.com/jinomee/mc/internal/brand.Version=0.0.${{ github.run_number }}-ci"
+          Get-ChildItem build/bin
+      - name: Smoke test (--core starts, answers, shuts down)
+        shell: pwsh
+        run: |
+          $env:LANYARD_HOME = "$env:RUNNER_TEMP\lanyard-home"
+          $p = Start-Process -FilePath gui\build\bin\LANyard.exe -ArgumentList "--core" -PassThru
+          go run ./cmd/lanyard-core ctl -timeout 5s GET /v1/hello
+          for ($i = 0; $i -lt 30 -and $LASTEXITCODE -ne 0; $i++) { Start-Sleep -Milliseconds 500; go run ./cmd/lanyard-core ctl -timeout 5s GET /v1/hello }
+          if ($LASTEXITCODE -ne 0) { throw "core did not answer" }
+          go run ./cmd/lanyard-core ctl POST /v1/shutdown
+          $p.WaitForExit(15000) | Out-Null
+          if (-not $p.HasExited) { throw "core did not exit" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LANyard-windows-${{ github.run_number }}
+          path: |
+            gui/build/bin/LANyard.exe
+            gui/build/bin/*installer.exe
+          if-no-files-found: error
