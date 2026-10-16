@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -91,6 +92,7 @@ type joinSession struct {
 	connectedAt time.Time
 	stats       proxy.Stats
 
+	punchSeen map[netip.AddrPort]bool
 	ep4, ep6  *transport.Endpoint
 	gathered  *connect.Gathered
 	listener  net.Listener
@@ -277,6 +279,18 @@ func (j *joinSession) run() {
 			j.setStatus(JoinAuthenticating)
 		},
 		OnWaitApproval: func() { j.setStatus(JoinWaitingApproval) },
+		OnPunch: func(from netip.AddrPort) {
+			j.mu.Lock()
+			first := !j.punchSeen[from]
+			if j.punchSeen == nil {
+				j.punchSeen = map[netip.AddrPort]bool{}
+			}
+			j.punchSeen[from] = true
+			j.mu.Unlock()
+			if first {
+				j.e.log.Info("host punch received", "from", from)
+			}
+		},
 	})
 	<-gatherDone
 	if err != nil {

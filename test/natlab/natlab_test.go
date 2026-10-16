@@ -152,6 +152,12 @@ func dump(t *testing.T, l *Lab) {
 			t.Logf("---- %s ----\n%s", name, log)
 		}
 	}
+	for _, ns := range []string{"ly-hr", "ly-gr", "ly-hc", "ly-inet"} {
+		out, err := exec.Command("ip", "netns", "exec", ns, "cat", "/proc/net/nf_conntrack").CombinedOutput()
+		if err == nil {
+			t.Logf("---- conntrack %s ----\n%s", ns, out)
+		}
+	}
 }
 
 func runScenario(t *testing.T, core, helper string, sc scenario) {

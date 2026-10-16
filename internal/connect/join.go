@@ -106,6 +106,8 @@ type JoinOptions struct {
 	OnWaitApproval func()
 	// OnConnected is called when a QUIC path is up, before authentication.
 	OnConnected func(Attempt)
+	// OnPunch is called for every valid punch packet from the host.
+	OnPunch func(from netip.AddrPort)
 }
 
 // Joined is a successful, authenticated connection to a host.
@@ -158,6 +160,9 @@ func Join(ctx context.Context, opt JoinOptions) (*Joined, error) {
 		role, sess, ok := transport.ParsePunch(opt.Invite.Secret, p.Data)
 		if !ok || role != transport.RoleHost || sess != opt.Session {
 			return
+		}
+		if opt.OnPunch != nil {
+			opt.OnPunch(p.From)
 		}
 		j.startPath(path{StratPeerRefl, p.From}, 0)
 	}

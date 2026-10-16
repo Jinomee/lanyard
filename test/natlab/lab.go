@@ -216,6 +216,8 @@ func (l *Lab) site(key string, s Site) {
 		ipns(t, a.ns, "addr", "add", a.pc6+"/64", "dev", "eth0", "nodad")
 		ipns(t, a.ns, "-6", "route", "add", "default", "via", a.lan6)
 		ipns(t, a.router, "-6", "route", "add", other.lanNet6, "via", other.wan6)
+		// The "internet" routes the site's prefix to its router (STUN replies).
+		ipns(t, inetNS, "-6", "route", "add", a.lanNet6, "via", a.wan6)
 	}
 
 	l.nft(a.router, nftRules(s.NAT, s.V6Firewall, a.pc4))
@@ -270,6 +272,7 @@ func nftRules(nat string, v6fw bool, pc string) string {
   chain input {
     type filter hook input priority 0; policy accept;
     iifname "wan" ct state established,related accept
+    iifname "wan" meta l4proto ipv6-icmp accept   # neighbour discovery, like real routers
     iifname "wan" drop
   }
   chain prerouting {
