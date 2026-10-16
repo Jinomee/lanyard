@@ -1,0 +1,11 @@
+/dist/
+/bin/
+gui/build/bin/
+gui/frontend/node_modules/
+gui/frontend/dist/
+gui/frontend/wailsjs/
+*.exe
+*.test
+*.out
+coverage.*
+/test/natlab/work/
