@@ -102,7 +102,7 @@ func TestReferencedKeysExist(t *testing.T) {
 	scan := func(root string, exts ...string) {
 		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
-				return nil
+				return nil //nolint:nilerr // unreadable entries are skipped
 			}
 			if d.IsDir() && (d.Name() == "node_modules" || d.Name() == "wailsjs" || d.Name() == "dist" || d.Name() == "testdata") {
 				return filepath.SkipDir
@@ -116,7 +116,7 @@ func TestReferencedKeysExist(t *testing.T) {
 			}
 			b, err := os.ReadFile(p)
 			if err != nil {
-				return nil
+				return nil //nolint:nilerr // unreadable files are skipped
 			}
 			for _, m := range keyLiteral.FindAllStringSubmatch(string(b), -1) {
 				if strings.HasSuffix(m[1], ".") || strings.HasSuffix(m[1], "_") || strings.HasSuffix(m[1], ".json") {
