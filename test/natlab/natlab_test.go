@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinomee/mc/internal/engine"
+	"github.com/jinomee/lanyard/internal/engine"
 )
 
 // Expectations.
@@ -88,7 +88,7 @@ func buildBinaries(t *testing.T) (core, helper string) {
 	}
 	dir := t.TempDir()
 	core, helper = filepath.Join(dir, "lanyard-core"), filepath.Join(dir, "helper")
-	for _, b := range [][2]string{{core, "github.com/jinomee/mc/cmd/lanyard-core"}, {helper, "github.com/jinomee/mc/test/natlab/helper"}} {
+	for _, b := range [][2]string{{core, "github.com/jinomee/lanyard/cmd/lanyard-core"}, {helper, "github.com/jinomee/lanyard/test/natlab/helper"}} {
 		cmd := exec.Command("go", "build", "-o", b[0], b[1])
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if out, err := cmd.CombinedOutput(); err != nil {

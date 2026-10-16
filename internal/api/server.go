@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinomee/mc/internal/brand"
-	"github.com/jinomee/mc/internal/config"
-	"github.com/jinomee/mc/internal/engine"
-	"github.com/jinomee/mc/internal/i18n"
+	"github.com/jinomee/lanyard/internal/brand"
+	"github.com/jinomee/lanyard/internal/config"
+	"github.com/jinomee/lanyard/internal/engine"
+	"github.com/jinomee/lanyard/internal/i18n"
 )
 
 // Hello is the unauthenticated-looking-but-authenticated handshake response.

@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/net/ipv4"
 
-	"github.com/jinomee/mc/internal/netinfo"
+	"github.com/jinomee/lanyard/internal/netinfo"
 )
 
 // Interval is how often Minecraft (and LANyard) announce a world.

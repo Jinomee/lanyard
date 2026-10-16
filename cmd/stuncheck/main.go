@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinomee/mc/internal/config"
-	"github.com/jinomee/mc/internal/stunx"
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/config"
+	"github.com/jinomee/lanyard/internal/stunx"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 // candidates are extra servers worth evaluating for the default list.

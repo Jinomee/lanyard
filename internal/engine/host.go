@@ -14,12 +14,12 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"github.com/jinomee/mc/internal/connect"
-	"github.com/jinomee/mc/internal/i18n"
-	"github.com/jinomee/mc/internal/joincode"
-	"github.com/jinomee/mc/internal/mclan"
-	"github.com/jinomee/mc/internal/proxy"
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/connect"
+	"github.com/jinomee/lanyard/internal/i18n"
+	"github.com/jinomee/lanyard/internal/joincode"
+	"github.com/jinomee/lanyard/internal/mclan"
+	"github.com/jinomee/lanyard/internal/proxy"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 // MaxGuests is the number of friends one host admits (8 players in total).

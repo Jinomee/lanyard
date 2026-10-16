@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jinomee/mc/internal/connect"
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/connect"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 var placeholder = regexp.MustCompile(`\{[a-zA-Z]+\}`)

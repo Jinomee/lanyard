@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/jinomee/mc/internal/brand"
+	"github.com/jinomee/lanyard/internal/brand"
 )
 
 func lockFile(f *os.File) error {

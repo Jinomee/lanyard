@@ -17,15 +17,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jinomee/mc/internal/brand"
-	"github.com/jinomee/mc/internal/config"
-	"github.com/jinomee/mc/internal/connect"
-	"github.com/jinomee/mc/internal/i18n"
-	"github.com/jinomee/mc/internal/logbuf"
-	"github.com/jinomee/mc/internal/portmap"
-	"github.com/jinomee/mc/internal/sysinfo"
-	"github.com/jinomee/mc/internal/transport"
-	"github.com/jinomee/mc/internal/update"
+	"github.com/jinomee/lanyard/internal/brand"
+	"github.com/jinomee/lanyard/internal/config"
+	"github.com/jinomee/lanyard/internal/connect"
+	"github.com/jinomee/lanyard/internal/i18n"
+	"github.com/jinomee/lanyard/internal/logbuf"
+	"github.com/jinomee/lanyard/internal/portmap"
+	"github.com/jinomee/lanyard/internal/sysinfo"
+	"github.com/jinomee/lanyard/internal/transport"
+	"github.com/jinomee/lanyard/internal/update"
 )
 
 // UserError is an error with a user-facing i18n key.

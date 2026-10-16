@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"github.com/jinomee/mc/internal/corecmd"
+	"github.com/jinomee/lanyard/internal/corecmd"
 )
 
 func main() {

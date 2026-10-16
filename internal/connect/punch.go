@@ -5,8 +5,8 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/jinomee/mc/internal/joincode"
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/joincode"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 // PunchOptions configures HostPunch.

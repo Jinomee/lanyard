@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jinomee/mc/internal/joincode"
+	"github.com/jinomee/lanyard/internal/joincode"
 )
 
 // Identity is the host's long-lived TLS identity. Its certificate fingerprint

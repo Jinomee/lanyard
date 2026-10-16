@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jinomee/mc/internal/brand"
+	"github.com/jinomee/lanyard/internal/brand"
 )
 
 const wailsJSON = "gui/wails.json"

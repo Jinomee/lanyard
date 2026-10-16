@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jinomee/mc/internal/brand"
+	"github.com/jinomee/lanyard/internal/brand"
 )
 
 //go:embed locales/*.json

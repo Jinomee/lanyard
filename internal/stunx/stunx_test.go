@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 func freePort(t *testing.T) uint16 {

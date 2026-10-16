@@ -28,8 +28,8 @@ import (
 	"aead.dev/minisign"
 	"golang.org/x/term"
 
-	"github.com/jinomee/mc/internal/brand"
-	"github.com/jinomee/mc/internal/update"
+	"github.com/jinomee/lanyard/internal/brand"
+	"github.com/jinomee/lanyard/internal/update"
 )
 
 func main() {

@@ -2,6 +2,6 @@
   "name": "LANyard",
   "nameZh": "后院联机",
   "id": "lanyard",
-  "repo": "jinomee/mc",
+  "repo": "jinomee/lanyard",
   "updateServer": "https://updates.example.com/lanyard/"
 }

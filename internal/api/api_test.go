@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinomee/mc/internal/api"
-	"github.com/jinomee/mc/internal/engine"
-	"github.com/jinomee/mc/internal/mclan"
-	"github.com/jinomee/mc/internal/portmap"
-	"github.com/jinomee/mc/internal/stunx"
+	"github.com/jinomee/lanyard/internal/api"
+	"github.com/jinomee/lanyard/internal/engine"
+	"github.com/jinomee/lanyard/internal/mclan"
+	"github.com/jinomee/lanyard/internal/portmap"
+	"github.com/jinomee/lanyard/internal/stunx"
 )
 
 func freeUDP(t *testing.T) uint16 {

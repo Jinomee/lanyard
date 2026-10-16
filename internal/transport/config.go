@@ -8,7 +8,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"github.com/jinomee/mc/internal/joincode"
+	"github.com/jinomee/lanyard/internal/joincode"
 )
 
 // ALPN is the QUIC application protocol identifier.

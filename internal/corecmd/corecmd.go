@@ -18,13 +18,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jinomee/mc/internal/api"
-	"github.com/jinomee/mc/internal/brand"
-	"github.com/jinomee/mc/internal/config"
-	"github.com/jinomee/mc/internal/engine"
-	"github.com/jinomee/mc/internal/logbuf"
-	"github.com/jinomee/mc/internal/mclan"
-	"github.com/jinomee/mc/internal/sysinfo"
+	"github.com/jinomee/lanyard/internal/api"
+	"github.com/jinomee/lanyard/internal/brand"
+	"github.com/jinomee/lanyard/internal/config"
+	"github.com/jinomee/lanyard/internal/engine"
+	"github.com/jinomee/lanyard/internal/logbuf"
+	"github.com/jinomee/lanyard/internal/mclan"
+	"github.com/jinomee/lanyard/internal/sysinfo"
 )
 
 // Main dispatches subcommands and returns the process exit code.

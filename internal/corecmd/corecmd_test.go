@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jinomee/mc/internal/api"
+	"github.com/jinomee/lanyard/internal/api"
 )
 
 // TestSingleCoreAndDiscovery checks the discovery/lock contract a second

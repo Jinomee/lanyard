@@ -58,7 +58,7 @@ jobs:
           go run ./tools/brandsync -version "${{ steps.v.outputs.numeric }}"
           cd gui
           wails build -platform windows/amd64 -nsis -clean -trimpath `
-            -ldflags "-s -w -X github.com/jinomee/mc/internal/brand.Version=${{ steps.v.outputs.version }}"
+            -ldflags "-s -w -X github.com/jinomee/lanyard/internal/brand.Version=${{ steps.v.outputs.version }}"
 
       # ---- Code signing (TODO for the maintainer: apply to SignPath Foundation) ----
       # Until SIGNPATH_ORGANIZATION_ID is set, these steps are skipped and the
@@ -150,7 +150,7 @@ jobs:
           export GOOS="${TARGET%/*}" GOARCH="${TARGET#*/}"
           ext=""; [ "$GOOS" = windows ] && ext=".exe"
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -X github.com/jinomee/mc/internal/brand.Version=$V" \
+          go build -trimpath -ldflags "-s -w -X github.com/jinomee/lanyard/internal/brand.Version=$V" \
             -o "dist/lanyard-core-$V-$GOOS-$GOARCH$ext" ./cmd/lanyard-core
       - uses: actions/upload-artifact@v4
         with:

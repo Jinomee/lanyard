@@ -12,8 +12,8 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"github.com/jinomee/mc/internal/joincode"
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/joincode"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 // Strategy names, in happy-eyeballs preference order.

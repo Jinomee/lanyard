@@ -20,7 +20,7 @@ import (
 
 	"aead.dev/minisign"
 
-	"github.com/jinomee/mc/internal/brand"
+	"github.com/jinomee/lanyard/internal/brand"
 )
 
 //go:embed pubkey.txt

@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jinomee/mc/internal/config"
-	"github.com/jinomee/mc/internal/engine"
+	"github.com/jinomee/lanyard/internal/config"
+	"github.com/jinomee/lanyard/internal/engine"
 )
 
 // Client talks to a core.

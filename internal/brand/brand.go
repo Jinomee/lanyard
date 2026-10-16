@@ -40,7 +40,7 @@ func mustParse(b []byte) Info {
 	return i
 }
 
-// Version is set at build time with -ldflags "-X github.com/jinomee/mc/internal/brand.Version=1.2.3".
+// Version is set at build time with -ldflags "-X github.com/jinomee/lanyard/internal/brand.Version=1.2.3".
 var Version = "0.0.0-dev"
 
 // Get returns the brand information.

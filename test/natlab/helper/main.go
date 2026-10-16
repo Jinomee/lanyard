@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jinomee/mc/internal/mclan"
-	"github.com/jinomee/mc/internal/stunx"
+	"github.com/jinomee/lanyard/internal/mclan"
+	"github.com/jinomee/lanyard/internal/stunx"
 )
 
 func main() {

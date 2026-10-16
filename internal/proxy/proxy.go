@@ -17,7 +17,7 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 // Stats counts bytes moved; safe for concurrent use.

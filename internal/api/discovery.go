@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jinomee/mc/internal/brand"
-	"github.com/jinomee/mc/internal/engine"
-	"github.com/jinomee/mc/internal/sysinfo"
+	"github.com/jinomee/lanyard/internal/brand"
+	"github.com/jinomee/lanyard/internal/engine"
+	"github.com/jinomee/lanyard/internal/sysinfo"
 )
 
 // Discovery files, in the per-user config directory:

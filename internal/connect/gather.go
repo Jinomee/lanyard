@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jinomee/mc/internal/joincode"
-	"github.com/jinomee/mc/internal/netinfo"
-	"github.com/jinomee/mc/internal/portmap"
-	"github.com/jinomee/mc/internal/stunx"
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/joincode"
+	"github.com/jinomee/lanyard/internal/netinfo"
+	"github.com/jinomee/lanyard/internal/portmap"
+	"github.com/jinomee/lanyard/internal/stunx"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 // NAT type labels derived from mapping + filtering behaviour.

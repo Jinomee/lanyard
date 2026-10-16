@@ -13,7 +13,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/jinomee/mc/internal/brand"
+	"github.com/jinomee/lanyard/internal/brand"
 )
 
 // DefaultSTUNServers mixes globally operated servers with servers operated in

@@ -150,7 +150,7 @@ jobs:
           go run ./tools/brandsync -version "0.0.${{ github.run_number }}"
           cd gui
           wails build -platform windows/amd64 -nsis -clean -trimpath `
-            -ldflags "-X github.com/jinomee/mc/internal/brand.Version=0.0.${{ github.run_number }}-ci"
+            -ldflags "-X github.com/jinomee/lanyard/internal/brand.Version=0.0.${{ github.run_number }}-ci"
           Get-ChildItem build/bin
       - name: Smoke test (--core starts, answers, shuts down)
         shell: pwsh

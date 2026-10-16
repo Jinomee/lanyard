@@ -15,7 +15,7 @@ import (
 
 	"github.com/pion/stun/v3"
 
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 // PacketIO is the subset of transport.Endpoint the client needs.

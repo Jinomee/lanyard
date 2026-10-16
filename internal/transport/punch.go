@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 
-	"github.com/jinomee/mc/internal/joincode"
+	"github.com/jinomee/lanyard/internal/joincode"
 )
 
 // Punch packet layout (21 bytes):

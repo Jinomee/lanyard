@@ -1,4 +1,4 @@
-module github.com/jinomee/mc
+module github.com/jinomee/lanyard
 
 go 1.26.2
 

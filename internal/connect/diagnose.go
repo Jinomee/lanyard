@@ -1,8 +1,8 @@
 package connect
 
 import (
-	"github.com/jinomee/mc/internal/joincode"
-	"github.com/jinomee/mc/internal/stunx"
+	"github.com/jinomee/lanyard/internal/joincode"
+	"github.com/jinomee/lanyard/internal/stunx"
 )
 
 // Advice is one piece of user-facing guidance: an i18n key plus parameters.

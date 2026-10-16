@@ -1,11 +1,11 @@
-module github.com/jinomee/mc/gui
+module github.com/jinomee/lanyard/gui
 
 go 1.26.2
 
 toolchain go1.26.9
 
 require (
-	github.com/jinomee/mc v0.0.0
+	github.com/jinomee/lanyard v0.0.0
 	github.com/wailsapp/wails/v2 v2.16.0
 )
 
@@ -51,4 +51,4 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 )
 
-replace github.com/jinomee/mc => ../
+replace github.com/jinomee/lanyard => ../

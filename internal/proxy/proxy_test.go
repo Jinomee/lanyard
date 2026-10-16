@@ -15,8 +15,8 @@ import (
 
 	"github.com/quic-go/quic-go"
 
-	"github.com/jinomee/mc/internal/proxy"
-	"github.com/jinomee/mc/internal/transport"
+	"github.com/jinomee/lanyard/internal/proxy"
+	"github.com/jinomee/lanyard/internal/transport"
 )
 
 // fakeMinecraft is a TCP server that echoes everything and, after the client

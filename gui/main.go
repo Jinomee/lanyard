@@ -13,8 +13,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
-	"github.com/jinomee/mc/internal/brand"
-	"github.com/jinomee/mc/internal/corecmd"
+	"github.com/jinomee/lanyard/internal/brand"
+	"github.com/jinomee/lanyard/internal/corecmd"
 )
 
 //go:embed all:frontend/dist

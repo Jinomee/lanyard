@@ -16,13 +16,13 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"github.com/jinomee/mc/internal/api"
-	"github.com/jinomee/mc/internal/brand"
-	"github.com/jinomee/mc/internal/config"
-	"github.com/jinomee/mc/internal/engine"
-	"github.com/jinomee/mc/internal/i18n"
-	"github.com/jinomee/mc/internal/joincode"
-	"github.com/jinomee/mc/internal/sysinfo"
+	"github.com/jinomee/lanyard/internal/api"
+	"github.com/jinomee/lanyard/internal/brand"
+	"github.com/jinomee/lanyard/internal/config"
+	"github.com/jinomee/lanyard/internal/engine"
+	"github.com/jinomee/lanyard/internal/i18n"
+	"github.com/jinomee/lanyard/internal/joincode"
+	"github.com/jinomee/lanyard/internal/sysinfo"
 )
 
 // App holds the Go side of the GUI. Every exported method is callable from
