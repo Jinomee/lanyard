@@ -7,10 +7,14 @@ Unicode true
 ##
 ## What it does beyond copying files:
 ##   * Start-menu (and desktop) shortcut
-##   * registers the custom URI scheme (lanyard://join/...) via wails.associateCustomProtocols
+##   * registers the custom URI scheme (lanyard://join/...)
 ##   * adds an inbound Windows Firewall rule for the executable, so players are
 ##     never confronted with the "Allow access" prompt (removed on uninstall)
 ##   * stops a running background core before replacing files
+##
+## The uninstaller removes only the files it installed and then the folder if
+## it is empty, never `RMDir /r $INSTDIR`: the folder is whatever the user
+## typed on the directory page (it could be D:\Games).
 ##
 ## Code signing (SignPath) happens outside this script, see
 ## .github/workflows/release.yml.
@@ -35,10 +39,14 @@ ManifestDPIAware true
 !define MUI_ICON "..\icon.ico"
 !define MUI_UNICON "..\icon.ico"
 !define MUI_ABORTWARNING
-!define MUI_FINISHPAGE_RUN "$INSTDIR\${PRODUCT_EXECUTABLE}"
+; Start the app through Explorer so it runs as the user, not elevated like
+; the installer (and so does the background core it starts).
+!define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_FUNCTION RunUnelevated
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "..\..\..\..\LICENSE"
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryLeave
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -54,6 +62,22 @@ InstallDir "$PROGRAMFILES64\${INFO_PRODUCTNAME}"
 ShowInstDetails show
 
 !define FW_RULE "${INFO_PRODUCTNAME}"
+; URI scheme for join links. Kept in sync with internal/brand/brand.json "id"
+; by tools/brandsync.
+!define URI_SCHEME "lanyard"
+
+Function RunUnelevated
+   Exec '"$WINDIR\explorer.exe" "$INSTDIR\${PRODUCT_EXECUTABLE}"'
+FunctionEnd
+
+; If the user picks a folder that is not already a LANyard folder (for example
+; D:\Games), install into a LANyard subfolder of it.
+Function DirectoryLeave
+   ${GetFileName} "$INSTDIR" $R0
+   StrCmp $R0 "${INFO_PRODUCTNAME}" done
+   StrCpy $INSTDIR "$INSTDIR\${INFO_PRODUCTNAME}"
+   done:
+FunctionEnd
 
 Function .onInit
    !insertmacro wails.checkArchitecture
@@ -81,6 +105,9 @@ Section
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
+    ; wails_tools.nsh (regenerated on every build) leaves the program path
+    ; unquoted; quote it so installs under paths with spaces work reliably.
+    WriteRegStr SHELL_CONTEXT "Software\Classes\${URI_SCHEME}\shell\open\command" "" '"$INSTDIR\${PRODUCT_EXECUTABLE}" "%1"'
 
     ; Inbound firewall rule for the executable (all profiles: many PCs label
     ; home networks "Public"). Delete first so reinstalls don't duplicate it.
@@ -100,8 +127,13 @@ Section "uninstall"
     nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="${FW_RULE}"'
     Pop $0
 
-    RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # WebView2 data
-    RMDir /r $INSTDIR
+    ; WebView2 data lives in the user's roaming AppData, not ProgramData.
+    SetShellVarContext current
+    RMDir /r "$APPDATA\${PRODUCT_EXECUTABLE}"
+    !insertmacro wails.setShellContext
+
+    ; Only what the installer put there; the folder goes only if now empty.
+    Delete "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
@@ -110,4 +142,5 @@ Section "uninstall"
     !insertmacro wails.unassociateCustomProtocols
 
     !insertmacro wails.deleteUninstaller
+    RMDir $INSTDIR
 SectionEnd

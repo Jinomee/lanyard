@@ -1,8 +1,8 @@
 // Command brandsync copies the product identity from internal/brand/brand.json
-// into files that cannot read it at runtime (gui/wails.json, which drives the
-// executable name, Windows version info and the NSIS installer, including the
-// URI scheme registration). Run it after renaming the product; CI runs it
-// with -check to make sure the files are in sync.
+// into files that cannot read it at runtime: gui/wails.json, which drives the
+// executable name, Windows version info and the NSIS installer, and the URI
+// scheme define in the installer script. Run it after renaming the product;
+// CI runs it with -check to make sure the files are in sync.
 package main
 
 import (
@@ -11,11 +11,17 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 
 	"github.com/jinomee/lanyard/internal/brand"
 )
 
-const wailsJSON = "gui/wails.json"
+const (
+	wailsJSON  = "gui/wails.json"
+	projectNSI = "gui/build/windows/installer/project.nsi"
+)
+
+var uriSchemeDefine = regexp.MustCompile(`(?m)^!define URI_SCHEME ".*"\r?$`)
 
 func main() {
 	check := flag.Bool("check", false, "only report whether files are in sync")
@@ -27,6 +33,7 @@ func main() {
 		fmt.Println(b.UpdateServer)
 		return
 	}
+	syncNSI(b.ID, *check)
 	orig, err := os.ReadFile(wailsJSON)
 	if os.IsNotExist(err) {
 		return
@@ -72,6 +79,31 @@ func main() {
 		fail(err)
 	}
 	fmt.Println("updated", wailsJSON)
+}
+
+// syncNSI keeps the installer's URI_SCHEME define equal to the brand id.
+func syncNSI(id string, check bool) {
+	orig, err := os.ReadFile(projectNSI)
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		fail(err)
+	}
+	if !uriSchemeDefine.Match(orig) {
+		fail(fmt.Errorf("%s: no `!define URI_SCHEME \"...\"` line", projectNSI))
+	}
+	out := uriSchemeDefine.ReplaceAll(orig, []byte(`!define URI_SCHEME "`+id+`"`))
+	if bytes.Equal(out, orig) {
+		return
+	}
+	if check {
+		fail(fmt.Errorf("%s is out of sync with internal/brand/brand.json; run: go run ./tools/brandsync", projectNSI))
+	}
+	if err := os.WriteFile(projectNSI, out, 0o644); err != nil { //nolint:gosec // project file, not secret
+		fail(err)
+	}
+	fmt.Println("updated", projectNSI)
 }
 
 func fail(err error) {

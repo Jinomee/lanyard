@@ -486,23 +486,39 @@ func (h *hostSession) targetLocked() (netip.AddrPort, string) {
 		return netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(h.manualPort)), "" //nolint:gosec // validated 1..65535
 	}
 	if h.detector != nil {
-		ws := h.detector.Worlds()
-		// Stick with the world friends are already playing in while it is
-		// still open; another world opening later must not hijack them.
-		for _, w := range ws {
-			if w.Target() == h.lastTarget {
-				h.lastMOTD = w.MOTD
-				return h.lastTarget, h.lastMOTD
-			}
-		}
-		// Otherwise (first world, or the world was reopened on a new port)
-		// follow the most recently opened local world.
-		if len(ws) > 0 {
-			h.lastTarget, h.lastMOTD = ws[0].Target(), ws[0].MOTD
+		if w, ok := pickWorld(h.detector.Worlds(), h.lastTarget); ok {
+			h.lastTarget, h.lastMOTD = w.Target(), w.MOTD
 			return h.lastTarget, h.lastMOTD
 		}
 	}
 	return netip.AddrPort{}, ""
+}
+
+// pickWorld chooses the world to share from the detected ones (local first,
+// newest first). Only worlds opened on this computer are ever shared: a world
+// a roommate opened on the same Wi-Fi must never be put on the internet.
+func pickWorld(ws []mclan.World, last netip.AddrPort) (mclan.World, bool) {
+	var first *mclan.World
+	for i := range ws {
+		w := &ws[i]
+		if !w.Local {
+			continue
+		}
+		// Stick with the world friends are already playing in while it is
+		// still open; another world opening later must not hijack them.
+		if w.Target() == last {
+			return *w, true
+		}
+		if first == nil {
+			first = w
+		}
+	}
+	// Otherwise (first world, or the world was reopened on a new port)
+	// follow the most recently opened local world.
+	if first != nil {
+		return *first, true
+	}
+	return mclan.World{}, false
 }
 
 func (h *hostSession) motdLocked() string {
