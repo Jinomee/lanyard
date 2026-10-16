@@ -1,0 +1,12 @@
+{
+  "product": "LANyard",
+  "version": "9.9.9",
+  "date": "2026-10-16",
+  "notesUrl": "https://github.com/jinomee/mc/releases/tag/v9.9.9",
+  "notes": {"en": "Test release", "zh-CN": "测试版本"},
+  "files": [
+    {"name": "LANyard-9.9.9-windows-amd64-setup.exe", "os": "windows", "arch": "amd64", "kind": "installer", "size": 1, "sha256": "00", "urls": ["https://example.invalid/a"]},
+    {"name": "LANyard-9.9.9-windows-amd64.exe", "os": "windows", "arch": "amd64", "kind": "portable", "size": 1, "sha256": "00", "urls": ["https://example.invalid/b"]},
+    {"name": "lanyard-core-9.9.9-linux-amd64", "os": "linux", "arch": "amd64", "kind": "core", "size": 1, "sha256": "00", "urls": ["https://example.invalid/c"]}
+  ]
+}

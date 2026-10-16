@@ -54,10 +54,11 @@ type Detector struct {
 	local  func(netip.Addr) bool
 }
 
-// ListenDetector joins the Minecraft LAN group on every multicast-capable
-// interface (Minecraft announces on its default interface with loopback
-// enabled, so the local copy arrives on that interface).
-func ListenDetector() (*Detector, error) {
+// ListenRaw opens the LAN discovery port with address reuse and joins the
+// Minecraft LAN group on every multicast-capable interface (Minecraft
+// announces on its default interface with loopback enabled, so the local
+// copy arrives on that interface).
+func ListenRaw() (*net.UDPConn, error) {
 	lc := net.ListenConfig{Control: reuseControl}
 	pc, err := lc.ListenPacket(context.Background(), "udp4", "0.0.0.0:4445")
 	if err != nil {
@@ -86,6 +87,15 @@ func ListenDetector() (*Detector, error) {
 			return nil, errors.New("mclan: could not join the LAN discovery group on any interface")
 		}
 	}
+	return conn, nil
+}
+
+// ListenDetector starts detecting LAN worlds.
+func ListenDetector() (*Detector, error) {
+	conn, err := ListenRaw()
+	if err != nil {
+		return nil, err
+	}
 	d := &Detector{
 		conn:   conn,
 		now:    time.Now,
@@ -113,7 +123,7 @@ func (d *Detector) loop() {
 
 func (d *Detector) handle(b []byte, src netip.Addr) {
 	a, err := Parse(b)
-	if err != nil {
+	if err != nil || a.Relayed {
 		return
 	}
 	local := d.local(src)
@@ -234,7 +244,7 @@ func (a *Announcer) loop(ctx context.Context) {
 	defer t.Stop()
 	for {
 		a.mu.Lock()
-		pkt := Format(a.motd, a.port)
+		pkt := FormatRelayed(a.motd, a.port)
 		a.mu.Unlock()
 		_, _ = a.conn.WriteToUDP(pkt, unicast)
 		if a.mc != nil {

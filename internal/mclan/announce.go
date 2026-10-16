@@ -26,7 +26,14 @@ const MissingMOTD = "missing no"
 type Announcement struct {
 	MOTD string
 	Port uint16
+	// Relayed marks announcements made by LANyard itself for a remote world.
+	Relayed bool
 }
+
+// relayMarker trails LANyard's own announcements. Minecraft ignores anything
+// after [/AD], so the game still lists the world, while every LANyard core
+// (even one in another process) can recognise and skip it.
+const relayMarker = "[LY]"
 
 // ErrNotAnnouncement means the datagram is not a usable LAN announcement.
 var ErrNotAnnouncement = errors.New("mclan: not a LAN announcement")
@@ -84,13 +91,19 @@ func Parse(b []byte) (Announcement, error) {
 	if err != nil || p == 0 {
 		return Announcement{}, ErrNotAnnouncement
 	}
-	return Announcement{MOTD: parseMOTD(s), Port: uint16(p)}, nil
+	return Announcement{MOTD: parseMOTD(s), Port: uint16(p), Relayed: strings.HasSuffix(s, relayMarker)}, nil
 }
 
 // Format builds an announcement datagram. The MOTD is sanitised so that a
 // MOTD received from a remote host can never inject tags.
 func Format(motd string, port uint16) []byte {
 	return []byte("[MOTD]" + SanitizeMOTD(motd) + "[/MOTD][AD]" + strconv.Itoa(int(port)) + "[/AD]")
+}
+
+// FormatRelayed builds the announcement for a world LANyard relays from a
+// remote host (see relayMarker).
+func FormatRelayed(motd string, port uint16) []byte {
+	return append(Format(motd, port), relayMarker...)
 }
 
 // SanitizeMOTD removes tag brackets and control characters and limits length.

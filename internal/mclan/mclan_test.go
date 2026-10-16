@@ -18,9 +18,10 @@ func TestFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 	var want map[string]struct {
-		MOTD  string `json:"motd"`
-		Port  uint16 `json:"port"`
-		Error bool   `json:"error"`
+		MOTD    string `json:"motd"`
+		Port    uint16 `json:"port"`
+		Relayed bool   `json:"relayed"`
+		Error   bool   `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &want); err != nil {
 		t.Fatal(err)
@@ -43,7 +44,7 @@ func TestFixtures(t *testing.T) {
 			}
 			continue
 		}
-		if err != nil || a.MOTD != w.MOTD || a.Port != w.Port {
+		if err != nil || a.MOTD != w.MOTD || a.Port != w.Port || a.Relayed != w.Relayed {
 			t.Errorf("%s: got %+v, %v; want %q %d", f, a, err, w.MOTD, w.Port)
 		}
 	}
@@ -95,6 +96,7 @@ func TestDetectorBookkeeping(t *testing.T) {
 	d.handle([]byte("[MOTD]Bob - B[/MOTD][AD]41000[/AD]"), netip.MustParseAddr("192.168.1.9"))
 	d.Ignore(50000, true)
 	d.handle([]byte("[MOTD]Remote (via LANyard)[/MOTD][AD]50000[/AD]"), netip.MustParseAddr("127.0.0.1"))
+	d.handle(FormatRelayed("Other core's relay", 50001), netip.MustParseAddr("127.0.0.1"))
 	ws := d.Worlds()
 	if len(ws) != 2 {
 		t.Fatalf("worlds: %+v", ws)
