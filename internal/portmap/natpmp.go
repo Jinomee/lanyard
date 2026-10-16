@@ -2,8 +2,10 @@ package portmap
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
+	"strings"
 	"time"
 
 	natpmp "github.com/jackpal/go-nat-pmp"
@@ -34,16 +36,20 @@ func (n *natpmpMapper) add(ctx context.Context, internalPort, externalPort uint1
 		c := n.client(ctx)
 		ext, err := c.GetExternalAddress()
 		if err != nil {
-			ch <- out{err: err}
-			return
-		}
-		r, err := c.AddPortMapping("udp", int(internalPort), int(externalPort), int(lifetime/time.Second))
-		if err != nil {
+			// Result code 3 = "network failure": the box has no external address.
+			if strings.Contains(err.Error(), "result code 3") {
+				err = fmt.Errorf("%w (%v)", ErrPrivateExternal, err)
+			}
 			ch <- out{err: err}
 			return
 		}
 		ip := netip.AddrFrom4(ext.ExternalIPAddress)
 		if err := checkExternal(ip); err != nil {
+			ch <- out{err: err}
+			return
+		}
+		r, err := c.AddPortMapping("udp", int(internalPort), int(externalPort), int(lifetime/time.Second))
+		if err != nil {
 			ch <- out{err: err}
 			return
 		}

@@ -67,12 +67,13 @@ type JoinState struct {
 }
 
 type joinSession struct {
-	e      *Engine
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	inv    *joincode.Invite
-	sess   [joincode.SessionLen]byte
+	e       *Engine
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	inv     *joincode.Invite
+	sess    [joincode.SessionLen]byte
+	timeout time.Duration
 
 	mu          sync.Mutex
 	status      string
@@ -160,8 +161,9 @@ func summarize(inv *joincode.Invite) HostSummary {
 }
 
 // StartJoin begins joining a host with an invite code (or link). Any previous
-// join session is stopped first.
-func (e *Engine) StartJoin(code string) error {
+// join session is stopped first. timeout bounds the whole attempt including
+// the reply-code exchange (0 = ReplyLifetime).
+func (e *Engine) StartJoin(code string, timeout time.Duration) error {
 	if k, err := joincode.KindOf(code); err == nil && k == joincode.KindReply {
 		return userErr(http.StatusBadRequest, "err.code.is_reply")
 	}
@@ -177,8 +179,11 @@ func (e *Engine) StartJoin(code string) error {
 	}
 	e.StopJoin()
 	ctx, cancel := context.WithCancel(e.ctx)
+	if timeout <= 0 || timeout > ReplyLifetime {
+		timeout = ReplyLifetime
+	}
 	j := &joinSession{e: e, ctx: ctx, cancel: cancel, inv: inv, status: JoinConnecting, phase: connect.PhaseDirect,
-		code: code, since: time.Now(), attempts: []connect.Attempt{}}
+		code: code, since: time.Now(), attempts: []connect.Attempt{}, timeout: timeout}
 	_, _ = rand.Read(j.sess[:])
 	e.mu.Lock()
 	e.join = j
@@ -253,7 +258,7 @@ func (j *joinSession) run() {
 		j.mu.Unlock()
 	}()
 
-	ctx, cancel := context.WithTimeout(j.ctx, ReplyLifetime)
+	ctx, cancel := context.WithTimeout(j.ctx, j.timeout)
 	defer cancel()
 	joined, err := connect.Join(ctx, connect.JoinOptions{
 		EP4: ep4, EP6: ep6, Invite: j.inv, Name: s.PlayerName, App: brand.Version, Session: j.sess,

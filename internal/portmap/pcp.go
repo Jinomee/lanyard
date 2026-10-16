@@ -140,6 +140,9 @@ func (p *pcpMapper) roundTrip(ctx context.Context, internalPort, suggested uint1
 
 func (p *pcpMapper) add(ctx context.Context, internalPort, externalPort uint16, lifetime time.Duration) (netip.AddrPort, time.Duration, error) {
 	ap, ttl, err := p.roundTrip(ctx, internalPort, externalPort, uint32(lifetime/time.Second))
+	if errors.Is(err, ErrPrivateExternal) {
+		_ = p.remove(context.WithoutCancel(ctx), internalPort, 0) // the mapping exists but is useless
+	}
 	return ap, time.Duration(ttl) * time.Second, err
 }
 

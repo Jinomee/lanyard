@@ -47,9 +47,9 @@ jobs:
       - name: Fuzz (short)
         if: runner.os == 'Linux'
         run: |
-          go test ./internal/joincode -run '^$' -fuzz FuzzDecode -fuzztime 30s
-          go test ./internal/joincode -run '^$' -fuzz FuzzEncode -fuzztime 20s
-          go test ./internal/mclan -run '^$' -fuzz FuzzParse -fuzztime 20s
+          go test ./internal/joincode -run '^$' -fuzz FuzzDecode -fuzztime 300000x
+          go test ./internal/joincode -run '^$' -fuzz FuzzEncode -fuzztime 300000x
+          go test ./internal/mclan -run '^$' -fuzz FuzzParse -fuzztime 300000x
 
   cross-build:
     runs-on: ubuntu-latest

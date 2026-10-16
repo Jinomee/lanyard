@@ -125,7 +125,8 @@ type joiner struct {
 	opt      JoinOptions
 	ctx      context.Context
 	mu       sync.Mutex
-	attempts map[path]*Attempt
+	attempts map[netip.AddrPort]*Attempt // one path per address
+	pokes    map[netip.AddrPort]chan struct{}
 	phase    string
 	winner   chan won
 	wg       sync.WaitGroup
@@ -148,7 +149,8 @@ func Join(ctx context.Context, opt JoinOptions) (*Joined, error) {
 	}
 	actx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	j := &joiner{opt: opt, ctx: actx, attempts: map[path]*Attempt{}, phase: PhaseDirect, winner: make(chan won, 1)}
+	j := &joiner{opt: opt, ctx: actx, attempts: map[netip.AddrPort]*Attempt{}, pokes: map[netip.AddrPort]chan struct{}{},
+		phase: PhaseDirect, winner: make(chan won, 1)}
 
 	// Peer-reflexive learning: a valid host punch reveals the address the
 	// host's NAT actually uses toward us.
@@ -219,17 +221,30 @@ func (j *joiner) snapshot(a *Attempt) Attempt {
 	return *a
 }
 
+// startPath dials a new address. If the address is already being tried (a
+// host punch from an address we know), that path retries right away instead:
+// the punch means the host's NAT has just opened.
 func (j *joiner) startPath(p path, delay time.Duration) {
 	j.mu.Lock()
-	if _, dup := j.attempts[p]; dup || j.ctx.Err() != nil {
+	if j.ctx.Err() != nil {
 		j.mu.Unlock()
 		return
 	}
+	if _, dup := j.attempts[p.addr]; dup {
+		poke := j.pokes[p.addr]
+		j.mu.Unlock()
+		select {
+		case poke <- struct{}{}:
+		default:
+		}
+		return
+	}
 	a := &Attempt{Strategy: p.strategy, Addr: p.addr.String(), Phase: j.phase, Outcome: OutPending, Started: time.Now()}
-	j.attempts[p] = a
+	poke := make(chan struct{}, 1)
+	j.attempts[p.addr], j.pokes[p.addr] = a, poke
 	j.wg.Add(1)
 	j.mu.Unlock()
-	go j.run(p, a, delay)
+	go j.run(p, a, delay, poke)
 }
 
 func (j *joiner) report(a *Attempt) {
@@ -245,7 +260,7 @@ func (j *joiner) endpointFor(ap netip.AddrPort) *transport.Endpoint {
 	return j.opt.EP6
 }
 
-func (j *joiner) run(p path, a *Attempt, delay time.Duration) {
+func (j *joiner) run(p path, a *Attempt, delay time.Duration, poke <-chan struct{}) {
 	defer j.wg.Done()
 	ep := j.endpointFor(p.addr)
 	if ep == nil {
@@ -272,6 +287,7 @@ func (j *joiner) run(p path, a *Attempt, delay time.Duration) {
 		dcancel()
 		j.mu.Lock()
 		a.DurationMs = time.Since(t0).Milliseconds()
+		a.Phase = j.phase // the phase in which this try ended
 		if err == nil {
 			a.Outcome, a.Error = OutOK, ""
 		} else if j.ctx.Err() != nil {
@@ -298,6 +314,7 @@ func (j *joiner) run(p path, a *Attempt, delay time.Duration) {
 		}
 		select {
 		case <-time.After(backoff):
+		case <-poke:
 		case <-j.ctx.Done():
 			return
 		}

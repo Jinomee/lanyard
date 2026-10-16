@@ -152,12 +152,13 @@ func (s *Server) handler() http.Handler {
 
 	h("POST /v1/join/start", func(_ http.ResponseWriter, r *http.Request) (any, error) {
 		var req struct {
-			Code string `json:"code"`
+			Code       string `json:"code"`
+			TimeoutSec int    `json:"timeoutSec"` // optional; default 10 minutes
 		}
 		if err := decode(r, &req); err != nil {
 			return nil, err
 		}
-		return nil, s.e.StartJoin(req.Code)
+		return nil, s.e.StartJoin(req.Code, time.Duration(req.TimeoutSec)*time.Second)
 	})
 	h("POST /v1/join/stop", func(http.ResponseWriter, *http.Request) (any, error) { s.e.StopJoin(); return nil, nil })
 	h("POST /v1/code/parse", func(_ http.ResponseWriter, r *http.Request) (any, error) {

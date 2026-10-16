@@ -22,12 +22,14 @@ import (
 // The list is checked by the stun-check CI job (cmd/stuncheck); see
 // docs/DECISIONS.md for the last verification.
 var DefaultSTUNServers = []string{
-	"stun.miwifi.com:3478",        // Xiaomi (CN)
+	"stun.miwifi.com:3478",        // Xiaomi (CN), RFC 5780
 	"stun.chat.bilibili.com:3478", // Bilibili (CN)
-	"stun.hitv.com:3478",          // Mango TV (CN)
+	"stun.douyucdn.cn:18000",      // Douyu (CN), RFC 5780
+	"stun.cdnbye.com:3478",        // CDNBye (CN)
 	"stun.cloudflare.com:3478",    // Cloudflare (global anycast)
 	"stun.l.google.com:19302",     // Google (global; blocked in CN, harmless)
-	"stun.nextcloud.com:3478",     // Nextcloud (EU)
+	"stun.nextcloud.com:3478",     // Nextcloud (EU), RFC 5780
+	"stun.freeswitch.org:3478",    // FreeSWITCH (US), RFC 5780
 }
 
 // Settings are the user-editable options.

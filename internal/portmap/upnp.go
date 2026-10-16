@@ -3,6 +3,7 @@ package portmap
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 	"strings"
 	"time"
@@ -76,11 +77,15 @@ func (u *upnpMapper) add(ctx context.Context, internalPort, externalPort uint16,
 	}
 	extStr, err := u.client.GetExternalIPAddressCtx(ctx)
 	if err != nil {
+		// miniupnpd answers 501 when its WAN address is private (CGNAT).
+		if strings.Contains(err.Error(), "501") {
+			return netip.AddrPort{}, 0, fmt.Errorf("%w (%v)", ErrPrivateExternal, err)
+		}
 		return netip.AddrPort{}, 0, wrap("get external IP", err)
 	}
 	ext, err := netip.ParseAddr(strings.TrimSpace(extStr))
 	if err != nil {
-		return netip.AddrPort{}, 0, errNoExternal
+		return netip.AddrPort{}, 0, ErrPrivateExternal
 	}
 	if err := checkExternal(ext); err != nil {
 		return netip.AddrPort{}, 0, err

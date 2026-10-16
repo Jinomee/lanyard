@@ -139,7 +139,8 @@ func Gather(ctx context.Context, opt GatherOptions) *Gathered {
 	switch {
 	case netinfo.IsCGNAT(r.Local.LANv4):
 		r.CGNAT, r.CGNATReason = true, "cgnat.local_shared"
-	case r.PortMap.Mapping != nil && !netinfo.IsPublicV4(r.PortMap.Mapping.External.Addr()):
+	case r.PortMap.PrivateExternal && r.PublicV4.IsValid(),
+		r.PortMap.Mapping != nil && !netinfo.IsPublicV4(r.PortMap.Mapping.External.Addr()):
 		r.CGNAT, r.CGNATReason = true, "cgnat.router_private"
 	case r.PortMap.Mapping != nil && r.PublicV4.IsValid() && r.PortMap.Mapping.External.Addr() != r.PublicV4.Addr():
 		r.CGNAT, r.CGNATReason = true, "cgnat.address_mismatch"

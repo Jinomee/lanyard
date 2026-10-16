@@ -40,6 +40,9 @@ type mapper interface {
 type Result struct {
 	Mapping *Mapping          `json:"mapping,omitempty"`
 	Errors  map[string]string `json:"errors,omitempty"` // protocol → error
+	// PrivateExternal: the router answered but has no public address itself
+	// (double NAT or carrier-grade NAT), so no mapping can help.
+	PrivateExternal bool `json:"privateExternal,omitempty"`
 }
 
 // Available reports whether any protocol succeeded.
@@ -98,23 +101,33 @@ func Map(ctx context.Context, internalPort uint16, opt Options) Result {
 	}
 	var win *Mapping
 	var mu sync.Mutex
+	private := false
 	for range ms {
 		r := <-ch
 		if r.err != nil {
 			errs[r.m.name()] = r.err.Error()
+			if errors.Is(r.err, ErrPrivateExternal) {
+				private = true
+			}
 			continue
 		}
 		mu.Lock()
-		if win == nil {
+		switch {
+		case win == nil:
 			win = &Mapping{Protocol: r.m.name(), External: r.ext, Internal: internalPort, Lifetime: r.ttl, m: r.m}
-		} else {
-			// Lost the race: tidy up the router (ctx may already be done).
+		case r.m.name() == "upnp" && r.ext.Port() != win.External.Port():
+			// A separate UPnP rule on another port: remove it (ctx may be done).
 			go func() { //nolint:gosec // G118: deliberate fresh context for cleanup
 				c, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				defer cancel()
 				_ = r.m.remove(c, internalPort, r.ext.Port())
 			}()
 			errs[r.m.name()] = "ok (not used: " + win.Protocol + " was faster)"
+		default:
+			// Most routers (miniupnpd) keep one rule per port for all three
+			// protocols, so deleting this "loser" would delete the winner
+			// too. NAT-PMP/PCP mappings expire on their own.
+			errs[r.m.name()] = "ok (same rule as " + win.Protocol + ")"
 		}
 		mu.Unlock()
 	}
@@ -124,7 +137,7 @@ func Map(ctx context.Context, internalPort uint16, opt Options) Result {
 	if len(errs) == 0 {
 		errs = nil
 	}
-	return Result{Mapping: win, Errors: errs}
+	return Result{Mapping: win, Errors: errs, PrivateExternal: private && win == nil}
 }
 
 func (m *Mapping) startRenew() {
@@ -179,11 +192,19 @@ func localIPFor(dst netip.Addr) (netip.Addr, error) {
 	return ap.Addr().Unmap(), nil
 }
 
-var errNoExternal = errors.New("router reported no usable external address")
+// ErrPrivateExternal means the router's own WAN address is missing or not
+// public: it sits behind another NAT (often the ISP's carrier-grade NAT).
+var ErrPrivateExternal = errors.New("router has no public address (double NAT or carrier-grade NAT)")
+
+var (
+	cgnatPrefix   = netip.MustParsePrefix("100.64.0.0/10")
+	errNoExternal = ErrPrivateExternal
+)
 
 func checkExternal(a netip.Addr) error {
-	if !a.IsValid() || a.IsUnspecified() {
-		return errNoExternal
+	a = a.Unmap()
+	if !a.IsValid() || a.IsUnspecified() || a.IsPrivate() || a.IsLoopback() || cgnatPrefix.Contains(a) {
+		return ErrPrivateExternal
 	}
 	return nil
 }
