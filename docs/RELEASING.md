@@ -5,8 +5,10 @@
 ### 1. Update-signing key (Ed25519, minisign-compatible)
 
 The app only offers an update if `manifest.json` carries a valid signature
-from the key embedded at build time (`internal/update/pubkey.txt`, currently
-`UNSET`, so update checks report "not available in this build").
+from the key embedded at build time (`internal/update/pubkey.txt`). The
+LANyard key (ID `85FFA6E20F740D07`) is set up and committed; a build with the
+file set to `UNSET` reports update checks as "not available in this build".
+These steps are for a fork, or for replacing a lost key.
 
 On a trusted machine (not CI):
 
@@ -68,9 +70,12 @@ files (pre-releases included, e.g. `0.1.0-rc.1/`).
 
 **What the release workflow does:** it lists the mirror URL
 (`<updateServer>/<version>/<file>`) next to the GitHub URL for every file in
-the manifest. After publishing on GitHub it rsyncs `dist/` to `./<version>/`.
-Then, **only for stable versions** (no `-` in the version), it rsyncs
-`manifest.json` and `manifest.json.minisig` to `./`. The workflow must stay
+the manifest. After publishing on GitHub it rsyncs `dist/` to `./<version>/`
+with `--ignore-existing`, so a re-run never replaces files that were already
+published. Then, **only for stable versions** (no `-` in the version) that
+are **newer than the mirror's current `manifest.json`**, it rsyncs
+`manifest.json` and `manifest.json.minisig` to `./`; re-running the workflow
+for an older tag can't roll the mirror back. The workflow must stay
 within the deploy key's limits: rsync uploads only, relative paths, no
 `--delete`, no other ssh commands.
 

@@ -197,6 +197,9 @@ jobs:
           go run ./cmd/lanyard-release sign -in dist/manifest.json
           # Must verify with the key embedded in the app, or users would never see the update.
           go run ./cmd/lanyard-release verify -in dist/manifest.json
+          # Signed too, so a download from the mirror can be checked without
+          # trusting the mirror (see the README).
+          go run ./cmd/lanyard-release sign -in dist/SHA256SUMS.txt
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -216,11 +219,22 @@ jobs:
           install -m 600 /dev/null ~/mirror_key && echo "$MIRROR_SSH_KEY" > ~/mirror_key
           ssh_cmd="ssh -i $HOME/mirror_key -o StrictHostKeyChecking=accept-new"
           # 1. Versioned files first, for every release (pre-releases too).
-          rsync -av -e "$ssh_cmd" dist/ "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/$V/"
+          #    --ignore-existing: files already published under a version are
+          #    served as immutable and never replaced, even by a re-run.
+          rsync -av --ignore-existing -e "$ssh_cmd" dist/ "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/$V/"
           # 2. Then the top-level manifest clients fetch, only for stable
-          #    releases: like GitHub's /releases/latest, the mirror never
-          #    offers a pre-release (a version containing "-") as an update.
+          #    releases (like GitHub's /releases/latest, the mirror never
+          #    offers a pre-release) newer than what the mirror has now, so
+          #    re-running an old tag can't roll it back.
+          server="$(go run ./tools/brandsync -print-update-server)"
+          current="$(curl -fsS "${server%/}/manifest.json" | jq -r .version || true)"
           case "$V" in
             *-*) echo "Pre-release $V: top-level manifest on the mirror left unchanged." ;;
-            *)   rsync -av -e "$ssh_cmd" dist/manifest.json dist/manifest.json.minisig "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/" ;;
+            *)
+              if [ -n "$current" ] && ! go run ./cmd/lanyard-release newer "$V" "$current"; then
+                echo "Mirror already offers $current; top-level manifest left unchanged."
+              else
+                rsync -av -e "$ssh_cmd" dist/manifest.json dist/manifest.json.minisig "${{ vars.MIRROR_HOST }}:${{ vars.MIRROR_PATH }}/"
+              fi
+              ;;
           esac

@@ -46,6 +46,14 @@ func main() {
 		err = sign(os.Args[2:])
 	case "verify":
 		err = verify(os.Args[2:])
+	case "newer":
+		// newer A B: exit status 0 if version A is newer than B, else 1.
+		if len(os.Args) != 4 {
+			usage()
+		}
+		if !update.Newer(os.Args[2], os.Args[3]) {
+			os.Exit(1)
+		}
 	default:
 		usage()
 	}
@@ -56,7 +64,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: lanyard-release keygen|manifest|sign|verify [flags]")
+	fmt.Fprintln(os.Stderr, "usage: lanyard-release keygen|manifest|sign|verify [flags] | newer A B")
 	os.Exit(2)
 }
 
@@ -238,10 +246,13 @@ func sign(args []string) error {
 	if err != nil {
 		return err
 	}
+	what := filepath.Base(*in)
 	var m update.Manifest
-	_ = json.Unmarshal(body, &m)
+	if json.Unmarshal(body, &m) == nil && m.Version != "" {
+		what = m.Version + " manifest"
+	}
 	sig := minisign.SignWithComments(key, body,
-		fmt.Sprintf("%s %s manifest, timestamp:%d", brand.Name(), m.Version, time.Now().Unix()),
+		fmt.Sprintf("%s %s, timestamp:%d", brand.Name(), what, time.Now().Unix()),
 		fmt.Sprintf("signature from %s release key %X", brand.Name(), key.ID()))
 	if err := os.WriteFile(*in+".minisig", sig, 0o644); err != nil { //nolint:gosec // public file
 		return err

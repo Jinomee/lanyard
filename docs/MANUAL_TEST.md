@@ -55,9 +55,11 @@ Record results in the release PR or issue (copy the table at the end).
 
 ## E. Housekeeping
 
-- [ ] Close the LANyard window while a friend is connected. A confirmation appears. After quitting, the friend is disconnected and `LANyard.exe` disappears from Task Manager within ~1 minute (the core's idle exit).
+- [ ] Close the LANyard window while a friend is connected. A confirmation appears, and pressing Enter does **not** quit (the default is No). After quitting, the friend is disconnected and `LANyard.exe` disappears from Task Manager within ~1 minute (the core's idle exit).
 - [ ] Settings → language switch EN ↔ 简体中文: every screen is translated, with no `key.like.this` strings.
-- [ ] Installer: Start-menu entry exists. `lanyard://join/<code>` from a browser address bar opens LANyard and starts joining. Uninstall removes the firewall rule (`wf.msc`).
+- [ ] Installer: Start-menu entry exists. `lanyard://join/<code>` from a browser address bar opens LANyard and starts joining. While already in a world, opening a link for another world asks first instead of leaving. Uninstall removes the firewall rule (`wf.msc`).
+- [ ] Installer directory: on the directory page, browse to or type a folder that already holds other files (for example `D:\Games`). The app installs into `D:\Games\LANyard`; after uninstalling, `D:\Games` and its other files are untouched.
+- [ ] Finish page "Run LANyard": in Task Manager → Details, add the "Elevated" column; `LANyard.exe` (GUI and core) shows "No".
 - [ ] Update check (once the signing key and a release exist): "LANyard x.y.z is available" appears, and Download opens the browser without installing anything.
 
 ## Report template

@@ -20,9 +20,10 @@ list.
 ### Download
 
 Get the latest release from the [Releases page](../../releases). If GitHub is
-slow or blocked for you, the same files are mirrored at
-`https://updates.jinome.org/lanyard/<version>/` (for example
-`https://updates.jinome.org/lanyard/0.1.0/`):
+slow or blocked for you, the same files are on the mirror. The mirror has no
+file listing, so use the full address, for example
+`https://updates.jinome.org/lanyard/0.1.0/LANyard-0.1.0-windows-amd64-setup.exe`
+(replace both version numbers with the one on the Releases page):
 
 * `LANyard-x.y.z-windows-amd64-setup.exe` — installer (recommended: adds the
   Windows Firewall rule, Start-menu entry and `lanyard://` links)
@@ -51,6 +52,16 @@ are suspicious of it, as they are of most new software.
 
   ```powershell
   Get-FileHash .\LANyard-1.0.0-windows-amd64-setup.exe   # compare with SHA256SUMS.txt
+  ```
+
+  Take `SHA256SUMS.txt` from the GitHub Releases page: a copy from the same
+  mirror as the download proves nothing on its own. If you can't reach
+  GitHub, check the copy's signature with [minisign](https://jedisct1.github.io/minisign/)
+  and the LANyard release key (also built into the app, which checks update
+  notices the same way):
+
+  ```
+  minisign -Vm SHA256SUMS.txt -P RWQHDXQP4qb/hcqaPHhgkXMW0LvO9nKTV/8Ca/Daqp7g7zvRsLHKhxKW
   ```
 
   Release files are built by [GitHub Actions](.github/workflows/release.yml)
@@ -157,7 +168,7 @@ License: [GPL-3.0](LICENSE).
 
 ### 下载
 
-在 [Releases 页面](../../releases) 下载最新版本。如果 GitHub 访问很慢或打不开，同样的文件也可以从镜像下载：`https://updates.jinome.org/lanyard/<版本号>/`（例如 `https://updates.jinome.org/lanyard/0.1.0/`）：
+在 [Releases 页面](../../releases) 下载最新版本。如果 GitHub 访问很慢或打不开，同样的文件也可以从镜像下载。镜像不提供文件列表，请使用完整地址，例如 `https://updates.jinome.org/lanyard/0.1.0/LANyard-0.1.0-windows-amd64-setup.exe`（把两处版本号都换成 Releases 页面上的版本）：
 
 * `LANyard-x.y.z-windows-amd64-setup.exe` —— 安装包（推荐：会自动添加 Windows 防火墙规则、开始菜单快捷方式和 `lanyard://` 链接支持）
 * `LANyard-x.y.z-windows-amd64.exe` —— 绿色版，直接运行
@@ -175,6 +186,12 @@ v1 只发布 Windows 版，代码同样可以在 macOS 和 Linux 上编译。
 
   ```powershell
   Get-FileHash .\LANyard-1.0.0-windows-amd64-setup.exe   # 与 SHA256SUMS.txt 对比
+  ```
+
+  `SHA256SUMS.txt` 请从 GitHub Releases 页面获取：和安装包来自同一个镜像的副本本身证明不了什么。如果打不开 GitHub，可以用 [minisign](https://jedisct1.github.io/minisign/) 和后院联机的发布公钥（软件内置同一个公钥，用来验证更新通知）检查副本的签名：
+
+  ```
+  minisign -Vm SHA256SUMS.txt -P RWQHDXQP4qb/hcqaPHhgkXMW0LvO9nKTV/8Ca/Daqp7g7zvRsLHKhxKW
   ```
 
   所有发布文件都由 [GitHub Actions](.github/workflows/release.yml) 直接从公开源代码构建，不经过任何人的电脑。

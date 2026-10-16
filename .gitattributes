@@ -1,3 +1,10 @@
+# LF everywhere, also in Windows checkouts with core.autocrlf=true: gofmt,
+# brandsync -check and the embedded locale files expect it.
+* text=auto eol=lf
+*.exe binary
+*.ico binary
+*.png binary
+
 # Test fixtures are compared byte for byte (signatures, captured packets):
 # never let git rewrite their line endings.
 **/testdata/** -text

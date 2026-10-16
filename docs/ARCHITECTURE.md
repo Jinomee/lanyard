@@ -126,8 +126,10 @@ symmetric NAT) and is added as a new candidate.
 | port-restricted | reply | reply | reply | **fails** |
 | symmetric | reply (prflx) | reply (prflx) | **fails** | **fails** |
 
-"Fails" cases need the v1.1 self-hosted relay or IPv6. The NAT matrix tests in
-`test/natlab` assert this table.
+"Fails" cases need the v1.1 self-hosted relay or IPv6. The NAT lab
+(`test/natlab`) checks a representative part of this table: a cell from every
+row and both sides of each "fails" boundary (7 cells), plus UPnP, CGNAT and
+IPv6-only scenarios. The remaining cells follow from the same rules.
 
 ### Security
 * QUIC/TLS 1.3 with ALPN `lanyard/1`. The guest pins the host certificate by
@@ -167,9 +169,10 @@ streams.
 `transport.Relay` is an interface returning a `net.PacketConn` that tunnels
 datagrams through a user-run relay. Because QUIC runs end-to-end over that
 PacketConn, pinning and authentication are unchanged; the relay only sees
-encrypted packets. `connect` treats it as one more strategy in the happy
-eyeballs race. v1 ships only `relay.Disabled`, and the relay address setting
-is stored but not shown.
+encrypted packets. In v1.1 `connect` will treat it as one more strategy in
+the happy eyeballs race. v1 ships only the interface and `transport.NoRelay`
+(which never allocates); nothing in `connect` uses it yet, and the relay
+address setting is stored but not shown.
 
 ## GUI
 Wails v2 with a plain TypeScript frontend (Vite). It calls Go bindings in
