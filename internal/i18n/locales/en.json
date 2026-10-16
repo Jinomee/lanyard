@@ -23,7 +23,7 @@
 
   "gui.core_unreachable": "The {app} background service is not responding: {error}",
   "gui.err.core": "The {app} background service could not be reached.",
-  "gui.err.save": "The file could not be saved.",
+  "gui.err.save": "Couldn't save {path}: {error}",
 
   "host.title": "Play your world with friends",
   "host.intro": "Your friends join your Minecraft world over the internet. Nothing to install on a server, nothing to configure on your router.",

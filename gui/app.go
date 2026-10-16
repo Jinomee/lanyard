@@ -104,7 +104,7 @@ func startCore() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, coreFlag)
+	cmd := exec.Command(exe, coreFlag) //nolint:gosec // our own executable, fixed argument
 	sysinfo.Detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
@@ -239,8 +239,11 @@ func (a *App) ExportLogs(title string) (string, error) {
 		Title: title, DefaultFilename: name,
 		Filters: []runtime.FileFilter{{DisplayName: "Zip", Pattern: "*.zip"}},
 	})
-	if err != nil || path == "" {
-		return "", err
+	if err != nil {
+		return "", saveError(path, err)
+	}
+	if path == "" {
+		return "", nil // cancelled
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
 	defer cancel()
@@ -253,10 +256,20 @@ func (a *App) ExportLogs(title string) (string, error) {
 		return "", uiError(err)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		b, _ := json.Marshal(engine.UserError{Key: "gui.err.save", Detail: err.Error()})
-		return "", errors.New(string(b))
+		return "", saveError(path, err)
 	}
 	return path, nil
+}
+
+// saveError is a local file error, worded as such (not as a core problem).
+func saveError(path string, err error) error {
+	msg := err.Error()
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		msg = pe.Err.Error() // the path is shown separately
+	}
+	b, _ := json.Marshal(engine.UserError{Key: "gui.err.save", Params: map[string]string{"path": path, "error": msg}})
+	return errors.New(string(b))
 }
 
 // OpenFirewallSettings opens the OS firewall settings (Windows only).

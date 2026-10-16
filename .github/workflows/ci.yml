@@ -32,6 +32,15 @@ jobs:
           GOOS: windows
         with:
           version: v2.14.0
+      # The GUI is its own Go module. Linted for Windows (the shipped
+      # platform; Wails' Linux code would need the WebKitGTK headers).
+      - name: golangci-lint (gui module, Windows build tags)
+        uses: golangci/golangci-lint-action@v8
+        env:
+          GOOS: windows
+        with:
+          version: v2.14.0
+          working-directory: gui
       - name: Brand files in sync
         run: go run ./tools/brandsync -check
 

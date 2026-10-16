@@ -7,10 +7,16 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// temporaryV6 returns the IPv6 privacy (temporary) addresses: those whose
-// interface identifier Windows generated randomly.
+// temporaryV6 returns the IPv6 privacy (temporary) addresses.
+//
+// A random interface identifier alone doesn't make an address temporary:
+// Windows also randomises the identifier of its stable address by default
+// (RandomizeIdentifiers). What differs is that Windows never registers a
+// temporary address in DNS, so it lacks IP_ADAPTER_ADDRESS_DNS_ELIGIBLE.
+// If that assumption were wrong, every address would land in one group and
+// the order would fall back to the OS's preferred source, as before.
 func temporaryV6() map[netip.Addr]bool {
-	const ipSuffixOriginRandom = 4
+	const ipAdapterAddressDNSEligible = 0x01
 	size := uint32(16 << 10)
 	var buf []byte
 	for range 3 {
@@ -31,7 +37,7 @@ func temporaryV6() map[netip.Addr]bool {
 	out := map[netip.Addr]bool{}
 	for aa := (*windows.IpAdapterAddresses)(unsafe.Pointer(&buf[0])); aa != nil; aa = aa.Next { //nolint:gosec // filled by the API
 		for ua := aa.FirstUnicastAddress; ua != nil; ua = ua.Next {
-			if ua.SuffixOrigin != ipSuffixOriginRandom {
+			if ua.SuffixOrigin != windows.IpSuffixOriginRandom || ua.Flags&ipAdapterAddressDNSEligible != 0 {
 				continue
 			}
 			if ip, ok := netip.AddrFromSlice(ua.Address.IP()); ok && ip.Is6() {

@@ -110,6 +110,10 @@ type hostSession struct {
 	detector   *mclan.Detector
 	invite     *joincode.Invite
 	code       string
+	// inviteCtx lives as long as the current invite; New code cancels it,
+	// which stops hole punching started with the old code's reply codes.
+	inviteCtx    context.Context
+	inviteCancel context.CancelFunc
 	guests     map[string]*guestConn
 	pending    map[string]*pendingJoin
 	punches    []*PunchInfo
@@ -318,6 +322,7 @@ func (h *hostSession) regather() error {
 		return h.ctx.Err()
 	}
 	h.gathered, h.invite, h.code = g, inv, code
+	h.inviteCtx, h.inviteCancel = context.WithCancel(h.ctx)
 	h.status, h.err = HostReady, nil
 	h.mu.Unlock()
 	h.e.log.Info("invite issued", "expires", inv.Expires, "candidates", len(inv.Candidates), "flags", inv.Flags)
@@ -337,8 +342,18 @@ func (e *Engine) NewCode() error {
 	}
 	h.status = HostRefreshing
 	// Revoke now, not when the new code is ready: from this moment the old
-	// secret admits nobody and old reply codes are refused.
+	// secret admits nobody, old reply codes are refused, punching for them
+	// stops, and anyone still waiting for approval is turned away.
 	h.invite, h.code = nil, ""
+	if h.inviteCancel != nil {
+		h.inviteCancel()
+	}
+	for _, p := range h.pending {
+		select {
+		case p.decide <- false:
+		default:
+		}
+	}
 	h.mu.Unlock()
 	e.log.Info("code revoked; issuing a new one")
 	go h.refresh()
@@ -436,6 +451,12 @@ func (h *hostSession) handle(conn *quic.Conn) {
 			full()
 			return
 		}
+		if !h.secretCurrentLocked(hello.Secret) { // New code was clicked just now
+			h.mu.Unlock()
+			log.Info("join rejected: code revoked meanwhile")
+			reject(conn, ctl, transport.ReasonBadSecret, transport.CodeBadSecret)
+			return
+		}
 		h.pending[info.ID] = p
 		h.mu.Unlock()
 		_ = ctl.Send(transport.Msg{T: "wait"})
@@ -455,6 +476,11 @@ func (h *hostSession) handle(conn *quic.Conn) {
 			_ = conn.CloseWithError(transport.CodeHostStopped, "host stopped")
 			return
 		}
+		if !h.secretCurrent(hello.Secret) {
+			log.Info("join rejected: code revoked while waiting for approval")
+			reject(conn, ctl, transport.ReasonBadSecret, transport.CodeBadSecret)
+			return
+		}
 		if !allow {
 			if decided {
 				log.Info("join denied by host")
@@ -472,6 +498,12 @@ func (h *hostSession) handle(conn *quic.Conn) {
 	if h.ctx.Err() != nil {
 		h.mu.Unlock()
 		_ = conn.CloseWithError(transport.CodeHostStopped, "")
+		return
+	}
+	if !h.secretCurrentLocked(hello.Secret) {
+		h.mu.Unlock()
+		log.Info("join rejected: code revoked meanwhile")
+		reject(conn, ctl, transport.ReasonBadSecret, transport.CodeBadSecret)
 		return
 	}
 	// Checked and inserted under one lock, so concurrent joins can't overshoot.
@@ -498,6 +530,17 @@ func (h *hostSession) handle(conn *quic.Conn) {
 	err = proxy.ServeHost(h.ctx, conn, h.dial, &h.stats)
 	h.removeGuest(info.ID)
 	log.Info("guest left", "reason", errString(err))
+}
+
+// secretCurrent reports whether secret belongs to the code in force now.
+func (h *hostSession) secretCurrent(secret []byte) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.secretCurrentLocked(secret)
+}
+
+func (h *hostSession) secretCurrentLocked(secret []byte) bool {
+	return h.invite != nil && subtle.ConstantTimeCompare(secret, h.invite.Secret[:]) == 1
 }
 
 func errString(err error) string {
@@ -660,7 +703,7 @@ func (e *Engine) SubmitReply(code string) error {
 		return codeError(err, "err.reply.invalid")
 	}
 	h.mu.Lock()
-	inv := h.invite
+	inv, ictx := h.invite, h.inviteCtx
 	ep4, ep6 := h.ep4, h.ep6
 	h.mu.Unlock()
 	if inv == nil {
@@ -684,7 +727,7 @@ func (e *Engine) SubmitReply(code string) error {
 	h.mu.Unlock()
 	e.log.Info("reply code accepted; punching", "targets", p.Targets, "guestFlags", rep.Flags)
 	go func() {
-		connect.HostPunch(h.ctx, connect.PunchOptions{EP4: ep4, EP6: ep6, Secret: inv.Secret, Reply: rep})
+		connect.HostPunch(ictx, connect.PunchOptions{EP4: ep4, EP6: ep6, Secret: inv.Secret, Reply: rep})
 		h.mu.Lock()
 		p.Active = false
 		h.mu.Unlock()

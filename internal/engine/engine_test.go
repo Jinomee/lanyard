@@ -173,3 +173,50 @@ func TestStopWhileStartingIsNotAnError(t *testing.T) {
 		t.Fatalf("after stop: %+v", s)
 	}
 }
+
+// A guest waiting for approval when the host clicks New code must not get in
+// with the old code, whatever the host clicks afterwards.
+func TestNewCodeTurnsAwayPendingGuests(t *testing.T) {
+	host, guest := newTestEngine(t), newTestEngine(t)
+	s := host.Settings()
+	s.RequireApproval = true
+	if _, err := host.SetSettings(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.StartHost(ModeManual, 25565); err != nil {
+		t.Fatal(err)
+	}
+	code := waitHost(t, host, HostReady).Code
+	if err := guest.StartJoin(code, 20*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	var pending string
+	deadline := time.Now().Add(15 * time.Second)
+	for pending == "" && time.Now().Before(deadline) {
+		if p := host.State().Host.Pending; len(p) > 0 {
+			pending = p[0].ID
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if pending == "" {
+		t.Fatal("guest never asked for approval")
+	}
+	if err := host.NewCode(); err != nil {
+		t.Fatal(err)
+	}
+	_ = host.Approve(pending, true) // too late: the code is gone
+	deadline = time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if j := guest.State().Join; j != nil && j.Status == JoinFailed {
+			if j.Failure == nil || j.Failure.Summary.Key != "diag.fail.bad_secret" {
+				t.Fatalf("failure %+v", j.Failure)
+			}
+			if n := len(host.State().Host.Guests); n != 0 {
+				t.Fatalf("%d guests admitted with a revoked code", n)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("guest state %+v", guest.State().Join)
+}

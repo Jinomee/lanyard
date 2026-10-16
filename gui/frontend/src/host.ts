@@ -15,7 +15,8 @@ let portInput: HTMLInputElement;
 let modeAuto: HTMLInputElement;
 let modeManual: HTMLInputElement;
 let lastState: State | null = null;
-let portEdited = false;
+let portEdited = false; // the user typed a port: settings must not overwrite it
+let typedPort = "";
 
 export function hostView(): HTMLElement {
   modeAuto = h("input", { type: "radio", name: "mode", value: "auto", checked: true }) as HTMLInputElement;
@@ -24,10 +25,14 @@ export function hostView(): HTMLElement {
     type: "number",
     min: 1,
     max: 65535,
-    value: 25565,
+    // Views are rebuilt on a language change: keep what was typed.
+    value: portEdited ? typedPort : 25565,
     class: "port",
     "aria-label": t("host.manual_port"),
-    oninput: () => (portEdited = true),
+    oninput: () => {
+      portEdited = true;
+      typedPort = portInput.value;
+    },
   }) as HTMLInputElement;
   void loadDefaultPort();
   msg = h("p", { class: "error", role: "alert" });

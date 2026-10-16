@@ -41,8 +41,12 @@ func IsUsableGlobalV6(a netip.Addr) bool {
 
 // Addrs describes the machine's interesting addresses.
 type Addrs struct {
-	// GlobalV6 are usable global IPv6 addresses, preferred source first.
+	// GlobalV6 are usable global IPv6 addresses: stable ones first, then
+	// temporary (privacy) ones; the OS's preferred source first in each group.
 	GlobalV6 []netip.Addr `json:"globalV6,omitempty"`
+	// TemporaryV6 are the GlobalV6 addresses recognised as temporary, shown
+	// in diagnostics so the classification can be checked.
+	TemporaryV6 []netip.Addr `json:"temporaryV6,omitempty"`
 	// LANv4 is the IPv4 address used for outbound traffic (usually private).
 	LANv4 netip.Addr `json:"lanV4,omitzero"`
 	// AllV4 are all non-loopback IPv4 interface addresses.
@@ -83,7 +87,13 @@ func Local() Addrs {
 	} else if len(out.AllV4) > 0 {
 		out.LANv4 = out.AllV4[0]
 	}
-	sortV6(out.GlobalV6, temporaryV6(), preferredSource("udp6", "[2400:3200::1]:53"))
+	tmp := temporaryV6()
+	sortV6(out.GlobalV6, tmp, preferredSource("udp6", "[2400:3200::1]:53"))
+	for _, a := range out.GlobalV6 {
+		if tmp[a] {
+			out.TemporaryV6 = append(out.TemporaryV6, a)
+		}
+	}
 	return out
 }
 

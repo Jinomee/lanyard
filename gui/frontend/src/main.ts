@@ -22,8 +22,32 @@ let linkOffer = ""; // a join link that arrived while already in a world
 const dismissed = new Set<string>();
 const ownCodes = new Set<string>(); // every code this computer has hosted with
 let lastRendered = "";
+let lastStructure = "";
 let lastRenderAt = 0;
-let pointerDown = false;
+let lastBanners = "";
+let pointerDownAt = 0; // 0 = no button held
+let linkQueue: Promise<void> = Promise.resolve();
+
+// Codes this computer hosted with, kept across restarts so the clipboard never
+// offers one of our own old codes. A per-device convenience: losing it only
+// means a redundant offer.
+const OWN_CODES_KEY = "lanyard.ownCodes";
+function loadOwnCodes() {
+  try {
+    for (const c of JSON.parse(localStorage.getItem(OWN_CODES_KEY) ?? "[]") as string[]) ownCodes.add(c);
+  } catch {
+    /* storage unavailable */
+  }
+}
+function rememberOwnCode(code: string) {
+  if (ownCodes.has(code)) return;
+  ownCodes.add(code);
+  try {
+    localStorage.setItem(OWN_CODES_KEY, JSON.stringify([...ownCodes].slice(-50)));
+  } catch {
+    /* storage unavailable */
+  }
+}
 let languageSetting = "";
 let views: Record<Tab, HTMLElement>;
 
@@ -72,7 +96,7 @@ function select(k: Tab) {
   document.querySelectorAll<HTMLElement>("nav .tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === k));
   if (state) renderers[k](state);
   if (k === "host") void loadDefaultPort();
-  renderBanners();
+  renderBanners(true); // after build() the banner area is new and empty
 }
 
 async function setLanguage(lang: string) {
@@ -95,9 +119,27 @@ function banner(cls: string, text: string, ...actions: HTMLElement[]) {
   return h("div", { class: "banner " + cls, role: "status" }, h("span", null, text), h("span", { class: "row" }, actions));
 }
 
-function renderBanners() {
+/** What the banners show; they are rebuilt only when this changes. */
+function bannerKey(): string {
+  const u = state?.update.result;
+  return JSON.stringify([
+    currentLanguage(),
+    coreError,
+    linkOffer,
+    clipboardOffer?.code ?? "",
+    state?.firewall ?? "",
+    !!state?.host && state.host.status !== "stopped",
+    u?.available ? [u.latest, u.notes, u.notesUrl, u.download?.urls] : null,
+  ]);
+}
+
+function renderBanners(force = false) {
   const el = document.getElementById("banners");
   if (!el) return;
+  const key = bannerKey();
+  // Rebuilding a banner under the pointer would swallow the click.
+  if (!force && key === lastBanners) return;
+  lastBanners = key;
   const items: HTMLElement[] = [];
   if (coreError) items.push(banner("error", t("gui.core_unreachable", { error: coreError })));
   if (linkOffer) {
@@ -144,10 +186,28 @@ function renderBanners() {
 
 /** True while re-rendering would get in the user's way. */
 function interacting(): boolean {
-  if (pointerDown) return true; // a click in progress would be lost
+  // A click in progress would be lost (capped: a release outside the
+  // window may never be reported).
+  if (pointerDownAt && Date.now() - pointerDownAt < 2000) return true;
   const sel = window.getSelection();
   const main = document.querySelector("main");
   return !!sel && !sel.isCollapsed && !!main && !!sel.anchorNode && main.contains(sel.anchorNode); // selecting a code
+}
+
+/** The state without counters that change every second. */
+function structure(s: State): string {
+  return JSON.stringify(s, (k, v) => (["bytesUp", "bytesDown", "durationMs", "tries", "rttMs", "elapsedMs"].includes(k) ? undefined : v));
+}
+
+/** Rejects if p hasn't settled within ms (a hung binding must not stop polling). */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error("timeout")), ms);
+    p.then(
+      (v) => { window.clearTimeout(timer); resolve(v); },
+      (e) => { window.clearTimeout(timer); reject(e); },
+    );
+  });
 }
 
 /** A world we're joining or in: the code, normalised by the core. */
@@ -157,7 +217,7 @@ function activeJoinCode(): string {
 }
 
 function forgetStaleOffers() {
-  if (state?.host?.code) ownCodes.add(state.host.code);
+  if (state?.host?.code) rememberOwnCode(state.host.code);
   const code = clipboardOffer?.code;
   if (code && (ownCodes.has(code) || code === activeJoinCode() || joinCodeInUse() === code)) {
     dismissed.add(code);
@@ -168,16 +228,21 @@ function forgetStaleOffers() {
 
 async function poll() {
   try {
-    state = await call<State>("GET", "/v1/state");
+    state = await withTimeout(call<State>("GET", "/v1/state"), 10000);
     coreError = "";
     forgetStaleOffers();
-    // Rebuild only when something changed (or every 15 s for the "for 3 min"
-    // timers), and never in the middle of a click or a text selection.
+    // Rebuild only when something changed (counters and the "for 3 min"
+    // timers at most every 15 s). Real changes (a guest joins, an approval
+    // request, an error) always show at once; only counter updates wait
+    // while a click or a text selection is in progress.
     const json = JSON.stringify(state);
-    const due = json !== lastRendered || Date.now() - lastRenderAt > 15000;
-    if (due && !interacting()) {
+    const struct = structure(state);
+    const changed = struct !== lastStructure;
+    const due = changed || ((json !== lastRendered || Date.now() - lastRenderAt > 15000) && !interacting());
+    if (due && !(changed && pointerDownAt && Date.now() - pointerDownAt < 2000)) {
       renderers[tab](state);
       lastRendered = json;
+      lastStructure = struct;
       lastRenderAt = Date.now();
     }
   } catch (e) {
@@ -188,8 +253,13 @@ async function poll() {
 
 /** Poll once a second; the next poll starts only after this one finished. */
 async function pollLoop() {
-  await poll();
-  window.setTimeout(() => void pollLoop(), 1000);
+  try {
+    await poll();
+  } catch {
+    /* never let one bad poll stop polling */
+  } finally {
+    window.setTimeout(() => void pollLoop(), 1000);
+  }
 }
 
 async function checkClipboard() {
@@ -211,9 +281,21 @@ async function checkClipboard() {
   }
 }
 
-async function handleLink(code: string) {
+function handleLink(code: string): Promise<void> {
+  // One link at a time, each deciding on fresh state: two quick links, or a
+  // link right after a manual join, must not silently replace a world.
+  linkQueue = linkQueue.then(() => handleLinkNow(code)).catch(() => undefined);
+  return linkQueue;
+}
+
+async function handleLinkNow(code: string) {
   if (!code) return;
   select("join");
+  try {
+    state = await withTimeout(call<State>("GET", "/v1/state"), 10000);
+  } catch {
+    /* decide on what we have */
+  }
   const current = activeJoinCode();
   if (current) {
     // Already joining or playing somewhere: never drop that silently.
@@ -236,9 +318,10 @@ async function main() {
   }
   await loadLanguage(languageSetting);
   build();
-  window.addEventListener("pointerdown", () => (pointerDown = true), true);
-  window.addEventListener("pointerup", () => window.setTimeout(() => (pointerDown = false), 0), true);
-  window.addEventListener("pointercancel", () => (pointerDown = false), true);
+  loadOwnCodes();
+  window.addEventListener("pointerdown", () => (pointerDownAt = Date.now()), true);
+  window.addEventListener("pointerup", () => window.setTimeout(() => (pointerDownAt = 0), 0), true);
+  window.addEventListener("pointercancel", () => (pointerDownAt = 0), true);
   await pollLoop();
   window.addEventListener("focus", () => void checkClipboard());
   void checkClipboard();
